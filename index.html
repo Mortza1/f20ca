@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Garage Booking Bot</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- FullCalendar CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.css" rel="stylesheet">
+</head>
+<body>
+    <!-- Header Section -->
+    <header class="header">
+        <h1 class="main-title">Garage Booking Assistant</h1>
+        <p class="subtitle">Your AI-powered voice assistant for seamless garage reservations</p>
+    </header>
+
+    <div class="container">
+        <!-- Left side: Calendar -->
+        <div class="calendar-section">
+            <h2 class="section-title">Your Schedule</h2>
+            <div id="calendar"></div>
+        </div>
+
+        <!-- Right side: Lottie Animation -->
+        <div class="animation-section">
+            <h2 class="section-title">Voice Assistant</h2>
+            <div id="lottie-animation"></div>
+            <p class="assistant-status">Ready to assist</p>
+        </div>
+    </div>
+
+    <!-- FullCalendar JS -->
+    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js"></script>
+    <!-- Lottie Web -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"></script>
+    <!-- Socket.IO Client (for future backend connection) -->
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <!-- Custom Script -->
+    <script src="script.js"></script>
+</body>
+</html>
