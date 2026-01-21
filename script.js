@@ -249,16 +249,6 @@ document.addEventListener('DOMContentLoaded', function() {
     function sendAudioToBackend(audioBlob) {
         console.log('Audio blob size:', audioBlob.size, 'bytes');
 
-        // TODO: Send via WebSocket to backend
-        // For now, just simulate processing
-        setTimeout(() => {
-            // Return to idle state to listen for next utterance
-            updateState('idle');
-            console.log('Ready for next speech');
-        }, 2000);
-
-        // When backend is ready, use this:
-        /*
         const reader = new FileReader();
         reader.onloadend = () => {
             const base64Audio = reader.result.split(',')[1];
@@ -268,39 +258,101 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         };
         reader.readAsDataURL(audioBlob);
-        */
     }
 
-    // Auto-start continuous listening on page load
-    initializeContinuousListening();
+    // Get transcription display element
+    const transcriptionDisplay = document.getElementById('transcription-display');
 
-    // Socket.IO connection (ready for backend)
-    // Uncomment when backend is ready
-    /*
+    // Socket.IO connection
     const socket = io('http://localhost:5000');
 
     socket.on('connect', function() {
-        console.log('Connected to backend');
+        console.log('Connected to backend server');
     });
 
-    socket.on('transcription', function(data) {
-        console.log('Transcription:', data.text);
-        // Process the transcription here
-    });
-
-    socket.on('booking_update', function(data) {
-        // Add new event to calendar
-        calendar.addEvent({
-            title: data.title,
-            start: data.start,
-            end: data.end,
-            color: '#ff8e3a'
-        });
+    socket.on('disconnect', function() {
+        console.log('Disconnected from backend server');
     });
 
     socket.on('bot_response', function(data) {
-        console.log('Bot says:', data.message);
-        updateState('ready');
+        console.log('User said:', data.user_text);
+        console.log('Bot responded:', data.bot_text);
+
+        // Display bot response
+        transcriptionDisplay.innerHTML = `
+            <div style="margin-bottom: 10px; color: rgba(255, 255, 255, 0.6); font-size: 0.9rem;">
+                You: ${data.user_text}
+            </div>
+            <div style="color: #ff8e3a;">
+                Assistant: ${data.bot_text}
+            </div>
+        `;
+        transcriptionDisplay.classList.add('updating');
+
+        // Remove updating class after animation
+        setTimeout(() => {
+            transcriptionDisplay.classList.remove('updating');
+        }, 500);
+
+        // Play TTS audio if available
+        if (data.audio) {
+            console.log('Playing TTS audio response');
+
+            // Convert base64 to audio blob
+            const audioBytes = atob(data.audio);
+            const arrayBuffer = new ArrayBuffer(audioBytes.length);
+            const uint8Array = new Uint8Array(arrayBuffer);
+            for (let i = 0; i < audioBytes.length; i++) {
+                uint8Array[i] = audioBytes.charCodeAt(i);
+            }
+            const audioBlob = new Blob([uint8Array], { type: 'audio/wav' });
+            const audioUrl = URL.createObjectURL(audioBlob);
+
+            // Create and play audio
+            const audio = new Audio(audioUrl);
+
+            // Keep processing state while audio plays
+            updateState('processing');
+
+            audio.onended = () => {
+                // Clean up and return to idle when done speaking
+                URL.revokeObjectURL(audioUrl);
+                updateState('idle');
+                console.log('TTS playback finished');
+            };
+
+            audio.onerror = (e) => {
+                console.error('Error playing audio:', e);
+                URL.revokeObjectURL(audioUrl);
+                updateState('idle');
+            };
+
+            audio.play().catch(e => {
+                console.error('Error starting audio playback:', e);
+                updateState('idle');
+            });
+        } else {
+            // No audio, return to idle immediately
+            updateState('idle');
+        }
     });
-    */
+
+    socket.on('error', function(data) {
+        console.error('Error from backend:', data.message);
+        transcriptionDisplay.textContent = 'Error: ' + data.message;
+        transcriptionDisplay.style.borderColor = '#ff4444';
+
+        // Return to idle state
+        setTimeout(() => {
+            updateState('idle');
+            transcriptionDisplay.style.borderColor = '';
+        }, 3000);
+    });
+
+    socket.on('status', function(data) {
+        console.log('Status:', data.message);
+    });
+
+    // Auto-start continuous listening on page load
+    initializeContinuousListening();
 });
