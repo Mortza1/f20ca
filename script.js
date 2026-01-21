@@ -5,9 +5,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const calendar = new FullCalendar.Calendar(calendarEl, {
         initialView: 'dayGridMonth',
         headerToolbar: {
-            left: 'prev,next today',
+            left: 'prev,next',
             center: 'title',
-            right: 'dayGridMonth,timeGridWeek,timeGridDay'
+            right: 'today'
         },
         height: 'auto',
         events: [
@@ -24,7 +24,9 @@ document.addEventListener('DOMContentLoaded', function() {
         },
         dateClick: function(info) {
             console.log('Clicked on: ' + info.dateStr);
-        }
+        },
+        // Disable view switching
+        viewClassNames: ['month-view-only']
     });
 
     calendar.render();
