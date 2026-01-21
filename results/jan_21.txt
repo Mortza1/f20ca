@@ -1,0 +1,1 @@
+right so I am using speech brain and everything is happening in batches... the overall latency is at 30s. this is bad but atleast this is functional.
