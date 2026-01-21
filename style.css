@@ -183,18 +183,59 @@ body {
     padding: 40px;
 }
 
+#lottie-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.3s ease;
+}
+
 #lottie-animation {
     width: 400px;
     height: 400px;
+    transition: all 0.3s ease;
 }
 
-.assistant-status {
-    margin-top: 20px;
-    font-size: 1rem;
+/* State-based blob sizing */
+#lottie-container.idle {
+    transform: scale(0.85);
+    opacity: 0.6;
+}
+
+#lottie-container.recording {
+    transform: scale(1.15);
+    opacity: 1;
+}
+
+#lottie-container.processing {
+    transform: scale(1.05);
+    opacity: 0.9;
+}
+
+/* Transcription Display */
+#transcription-display {
+    margin-top: 40px;
+    padding: 20px 30px;
+    background-color: rgba(255, 142, 58, 0.1);
+    border: 1px solid rgba(255, 142, 58, 0.3);
+    border-radius: 12px;
+    min-height: 80px;
+    max-width: 600px;
+    color: #ffffff;
+    font-size: 1.1rem;
     font-weight: 300;
-    color: #ff8e3a;
-    letter-spacing: 1px;
-    text-transform: uppercase;
+    line-height: 1.6;
+    text-align: center;
+    transition: all 0.3s ease;
+}
+
+#transcription-display:empty {
+    display: none;
+}
+
+#transcription-display.updating {
+    border-color: #ff8e3a;
+    background-color: rgba(255, 142, 58, 0.15);
 }
 
 /* Responsive Design */
@@ -230,6 +271,10 @@ body {
     #lottie-animation {
         width: 250px;
         height: 250px;
+    }
+
+    #lottie-container {
+        margin-top: 20px;
     }
 
     .section-title {
