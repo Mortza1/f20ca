@@ -308,7 +308,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // Log latency information
         if (data.latency_ms) {
-            console.log(`⏱️ Latency - Total: ${data.latency_ms.total}ms | Average: ${data.latency_ms.average}ms`);
+            console.log(`⏱️ Backend Latency: ${data.latency_ms.backend}ms | Average: ${data.latency_ms.average}ms`);
         }
 
         // Check if recording was saved
@@ -327,10 +327,13 @@ document.addEventListener('DOMContentLoaded', function() {
         if (data.latency_ms) {
             latencyInfo = `
                 <div style="margin-top: 15px; padding: 10px; background-color: rgba(0, 0, 0, 0.3); border-radius: 8px; font-size: 0.85rem;">
-                    <div style="color: rgba(255, 255, 255, 0.5); margin-bottom: 5px;">⏱️ Response Latency:</div>
+                    <div style="color: rgba(255, 255, 255, 0.5); margin-bottom: 5px;">⏱️ Backend Latency:</div>
                     <div style="color: #ff8e3a;">
-                        <span style="font-weight: 600;">${data.latency_ms.total}ms</span> this response
+                        <span style="font-weight: 600;">${data.latency_ms.backend}ms</span> this response
                         ${data.latency_ms.average ? `| <span style="font-weight: 600;">${data.latency_ms.average}ms</span> average` : ''}
+                    </div>
+                    <div style="color: rgba(255, 255, 255, 0.4); font-size: 0.8rem; margin-top: 5px;">
+                        TTS handled by ElevenLabs (client-side)
                     </div>
                 </div>
             `;
@@ -353,47 +356,33 @@ document.addEventListener('DOMContentLoaded', function() {
             transcriptionDisplay.classList.remove('updating');
         }, 500);
 
-        // Play TTS audio if available
-        if (data.audio) {
-            console.log('Playing TTS audio response');
+        // Generate and play TTS using ElevenLabs via Puter.js
+        console.log('Generating ElevenLabs TTS...');
 
-            // Convert base64 to audio blob
-            const audioBytes = atob(data.audio);
-            const arrayBuffer = new ArrayBuffer(audioBytes.length);
-            const uint8Array = new Uint8Array(arrayBuffer);
-            for (let i = 0; i < audioBytes.length; i++) {
-                uint8Array[i] = audioBytes.charCodeAt(i);
-            }
-            const audioBlob = new Blob([uint8Array], { type: 'audio/wav' });
-            const audioUrl = URL.createObjectURL(audioBlob);
+        // Keep processing state while generating and playing audio
+        updateState('processing');
 
-            // Create and play audio
-            const audio = new Audio(audioUrl);
+        puter.ai.txt2speech(data.bot_text, {
+            provider: "elevenlabs",
+            voice: "21m00Tcm4TlvDq8ikWAM", // Rachel voice
+            model: "eleven_flash_v2_5" // Fast generation model
+        })
+        .then(audio => {
+            console.log('ElevenLabs audio ready, playing...');
 
-            // Keep processing state while audio plays
-            updateState('processing');
+            // Play the audio
+            audio.play();
 
+            // Return to idle when audio finishes
             audio.onended = () => {
-                // Clean up and return to idle when done speaking
-                URL.revokeObjectURL(audioUrl);
                 updateState('idle');
-                console.log('TTS playback finished');
+                console.log('ElevenLabs TTS playback finished');
             };
-
-            audio.onerror = (e) => {
-                console.error('Error playing audio:', e);
-                URL.revokeObjectURL(audioUrl);
-                updateState('idle');
-            };
-
-            audio.play().catch(e => {
-                console.error('Error starting audio playback:', e);
-                updateState('idle');
-            });
-        } else {
-            // No audio, return to idle immediately
+        })
+        .catch(error => {
+            console.error('Error generating/playing ElevenLabs TTS:', error);
             updateState('idle');
-        }
+        });
     });
 
     socket.on('error', function(data) {

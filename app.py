@@ -4,9 +4,7 @@ import base64
 import os
 import tempfile
 from pydub import AudioSegment
-import torch
-import torchaudio
-from speechbrain.inference import EncoderDecoderASR, Tacotron2, HIFIGAN
+from speechbrain.inference import EncoderDecoderASR
 import logging
 import requests
 import json
@@ -14,6 +12,7 @@ from dotenv import load_dotenv
 from datetime import datetime
 import shutil
 import time
+import cohere
 
 # Load environment variables
 load_dotenv()
@@ -31,17 +30,25 @@ app.config['SECRET_KEY'] = 'garage-booking-secret'
 # Initialize SocketIO
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
-# Global ASR and TTS models (loaded at startup - KEEP HOT!)
+# Global ASR model (loaded at startup - KEEP HOT!)
+# TTS is now handled by frontend using ElevenLabs via Puter.js
 asr_model = None
-tts_model = None
-vocoder_model = None
 
-# OpenRouter API configuration
+# LLM Provider Configuration
+LLM_PROVIDER = os.getenv('LLM_PROVIDER', 'cohere').lower()  # Default to cohere
 OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
+COHERE_API_KEY = os.getenv('COHERE_API_KEY')
 
-if not OPENROUTER_API_KEY:
+# Validate configuration
+if LLM_PROVIDER == 'openrouter' and not OPENROUTER_API_KEY:
     logger.error("OPENROUTER_API_KEY not found in environment variables!")
     raise ValueError("Please set OPENROUTER_API_KEY in .env file")
+
+if LLM_PROVIDER == 'cohere' and not COHERE_API_KEY:
+    logger.error("COHERE_API_KEY not found in environment variables!")
+    raise ValueError("Please set COHERE_API_KEY in .env file")
+
+logger.info(f"LLM Provider: {LLM_PROVIDER.upper()}")
 
 # Recording directories
 RECORDINGS_DIR = 'recordings'
@@ -55,11 +62,9 @@ for directory in [COMBINED_AUDIO_DIR, METADATA_DIR]:
 # Global latency tracking
 latency_records = []
 
-def get_llm_response(user_message):
-    """Get response from LLM via OpenRouter API"""
+def get_llm_response_openrouter(user_message):
+    """Get response from OpenRouter API"""
     try:
-        logger.info(f"Sending to LLM: {user_message}")
-
         response = requests.post(
             url="https://openrouter.ai/api/v1/chat/completions",
             headers={
@@ -69,43 +74,82 @@ def get_llm_response(user_message):
                 "X-Title": "Garage Booking Assistant",
             },
             data=json.dumps({
-                "model": "google/gemma-3n-e2b-it:free",
+                "model": "qwen/qwen3-4b:free",
                 "messages": [
                     {
                         "role": "user",
                         "content": f"You are a helpful garage booking assistant. Help users book garage appointments, check availability, and answer questions about garage services. Be concise and friendly.\n\nUser: {user_message}\nAssistant:"
                     }
-                ]
+                ],
+                "max_tokens": 500
             }),
             timeout=30
         )
 
         response.raise_for_status()
         result = response.json()
-
-        llm_response = result['choices'][0]['message']['content']
-        logger.info(f"LLM response: {llm_response}")
-
-        return llm_response
+        return result['choices'][0]['message']['content']
 
     except requests.exceptions.HTTPError as e:
-        logger.error(f"HTTP Error getting LLM response: {e}")
+        logger.error(f"OpenRouter HTTP Error: {e}")
         try:
             error_detail = response.json()
             logger.error(f"API Error details: {error_detail}")
         except:
             logger.error(f"Response text: {response.text}")
-        return "I'm sorry, I'm having trouble processing your request right now. Please try again."
+        raise
+    except Exception as e:
+        logger.error(f"OpenRouter Error: {e}")
+        raise
+
+def get_llm_response_cohere(user_message):
+    """Get response from Cohere API"""
+    try:
+        co = cohere.ClientV2(COHERE_API_KEY)
+
+        system_message = "You are a helpful garage booking assistant. Help users book garage appointments, check availability, and answer questions about garage services. Be concise and friendly."
+
+        response = co.chat(
+            model="command-a-03-2025",
+            messages=[
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": user_message}
+            ],
+            max_tokens=500
+        )
+
+        return response.message.content[0].text
+
+    except Exception as e:
+        logger.error(f"Cohere Error: {e}")
+        raise
+
+def get_llm_response(user_message):
+    """Get response from configured LLM provider"""
+    try:
+        logger.info(f"Sending to {LLM_PROVIDER.upper()}: {user_message}")
+
+        if LLM_PROVIDER == 'openrouter':
+            llm_response = get_llm_response_openrouter(user_message)
+        elif LLM_PROVIDER == 'cohere':
+            llm_response = get_llm_response_cohere(user_message)
+        else:
+            raise ValueError(f"Unknown LLM provider: {LLM_PROVIDER}")
+
+        logger.info(f"LLM response: {llm_response}")
+        return llm_response
+
     except Exception as e:
         logger.error(f"Error getting LLM response: {e}")
         return "I'm sorry, I'm having trouble processing your request right now. Please try again."
 
 def initialize_models():
-    """Load all models at startup and keep them hot in memory"""
-    global asr_model, tts_model, vocoder_model
+    """Load ASR model at startup and keep it hot in memory"""
+    global asr_model
 
     logger.info("=" * 60)
-    logger.info("INITIALIZING MODELS AT STARTUP - LOADING INTO MEMORY")
+    logger.info("INITIALIZING ASR MODEL AT STARTUP")
+    logger.info("TTS is handled by frontend (ElevenLabs via Puter.js)")
     logger.info("=" * 60)
 
     try:
@@ -119,62 +163,17 @@ def initialize_models():
         asr_time = time.time() - asr_start
         logger.info(f"✓ ASR model loaded successfully! ({asr_time:.2f}s)")
 
-        # Load TTS models
-        logger.info("Loading SpeechBrain TTS models...")
-        tts_start = time.time()
-
-        # Load Tacotron2 for text-to-mel spectrogram
-        tts_model = Tacotron2.from_hparams(
-            source="speechbrain/tts-tacotron2-ljspeech",
-            savedir="pretrained_models/tts-tacotron2-ljspeech"
-        )
-        logger.info("  ✓ Tacotron2 loaded")
-
-        # Load HiFiGAN vocoder for mel-to-waveform
-        vocoder_model = HIFIGAN.from_hparams(
-            source="speechbrain/tts-hifigan-ljspeech",
-            savedir="pretrained_models/tts-hifigan-ljspeech"
-        )
-        tts_time = time.time() - tts_start
-        logger.info(f"  ✓ HiFiGAN vocoder loaded ({tts_time:.2f}s)")
-
-        total_time = asr_time + tts_time
         logger.info("=" * 60)
-        logger.info(f"ALL MODELS LOADED AND HOT! Total time: {total_time:.2f}s")
-        logger.info("Models will stay in memory - no per-request loading")
+        logger.info(f"ASR MODEL LOADED AND HOT! Load time: {asr_time:.2f}s")
+        logger.info("Model will stay in memory - no per-request loading")
         logger.info("=" * 60)
 
     except Exception as e:
-        logger.error(f"FATAL: Failed to load models at startup: {e}")
+        logger.error(f"FATAL: Failed to load ASR model at startup: {e}")
         raise
 
-def text_to_speech(text):
-    """Convert text to speech audio using hot models"""
-    try:
-        logger.info(f"Generating speech for: {text}")
-
-        # Use hot models (already loaded at startup)
-        # Generate mel spectrogram from text
-        mel_output, mel_length, alignment = tts_model.encode_text(text)
-
-        # Generate waveform from mel spectrogram
-        waveforms = vocoder_model.decode_batch(mel_output)
-
-        # Save to temporary file
-        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as wav_file:
-            wav_path = wav_file.name
-            torchaudio.save(
-                wav_path,
-                waveforms.squeeze(1).cpu(),
-                22050  # Sample rate for TTS model
-            )
-
-        logger.info(f"Speech generated: {wav_path}")
-        return wav_path
-
-    except Exception as e:
-        logger.error(f"Error generating speech: {e}")
-        return None
+# TTS is now handled by frontend using ElevenLabs via Puter.js
+# No need for backend TTS generation!
 
 def combine_audio_files(user_wav_path, bot_wav_path, session_id, add_silence=True):
     """Combine user and bot audio into a single WAV file with optional silence between them"""
@@ -351,58 +350,34 @@ def handle_audio_data(data):
         latency_info['llm_response'] = (time.time() - llm_start) * 1000
         logger.info(f"LLM response received ({latency_info['llm_response']:.2f}ms)")
 
-        # Generate TTS audio from LLM response (with timing)
-        logger.info("Generating TTS audio...")
-        tts_start = time.time()
-        audio_path = text_to_speech(llm_response)
-        latency_info['tts_generation'] = (time.time() - tts_start) * 1000
-        logger.info(f"TTS generated ({latency_info['tts_generation']:.2f}ms)")
+        # TTS is now handled by frontend using ElevenLabs via Puter.js
+        # No backend TTS generation needed!
+        latency_info['tts_generation'] = 0  # Frontend handles this
 
-        # Calculate total latency
-        total_latency = (time.time() - start_time) * 1000
+        # Calculate backend latency (excludes frontend TTS)
+        backend_latency = (time.time() - start_time) * 1000
 
+        # Save metadata if recording mode is enabled
         avg_latency = None
-        if audio_path:
-            # Save combined audio and metadata if recording mode is enabled
-            if recording_mode and session_id and user_wav_path:
-                # Combine user and bot audio
-                combine_audio_files(user_wav_path, audio_path, session_id)
-                # Save metadata with latency info
-                avg_latency = save_recording_metadata(session_id, transcription, llm_response, timestamp, latency_info)
-                # Clean up temporary user audio file
-                os.remove(user_wav_path)
+        if recording_mode and session_id and user_wav_path:
+            # Note: We only save user audio now, bot audio is generated on frontend
+            # Save metadata with latency info
+            avg_latency = save_recording_metadata(session_id, transcription, llm_response, timestamp, latency_info)
+            # Clean up temporary user audio file
+            os.remove(user_wav_path)
 
-            # Read audio file and encode to base64
-            with open(audio_path, 'rb') as f:
-                audio_data = base64.b64encode(f.read()).decode('utf-8')
-
-            # Clean up temp file
-            os.remove(audio_path)
-
-            # Send LLM response with audio back to frontend
-            emit('bot_response', {
-                'user_text': transcription,
-                'bot_text': llm_response,
-                'audio': audio_data,
-                'success': True,
-                'recorded': recording_mode,
-                'latency_ms': {
-                    'total': round(total_latency, 2),
-                    'average': round(avg_latency, 2) if avg_latency else None
-                }
-            })
-        else:
-            # Fallback if TTS fails
-            emit('bot_response', {
-                'user_text': transcription,
-                'bot_text': llm_response,
-                'success': True,
-                'recorded': recording_mode,
-                'latency_ms': {
-                    'total': round(total_latency, 2),
-                    'average': None
-                }
-            })
+        # Send LLM response (text only, no audio) back to frontend
+        # Frontend will generate speech using ElevenLabs via Puter.js
+        emit('bot_response', {
+            'user_text': transcription,
+            'bot_text': llm_response,
+            'success': True,
+            'recorded': recording_mode,
+            'latency_ms': {
+                'backend': round(backend_latency, 2),
+                'average': round(avg_latency, 2) if avg_latency else None
+            }
+        })
 
     except Exception as e:
         logger.error(f"Error processing audio: {e}")

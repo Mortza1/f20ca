@@ -7,3 +7,5 @@ torchaudio
 pydub==0.25.1
 numpy
 python-dotenv==1.0.0
+cohere
+requests
