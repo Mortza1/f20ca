@@ -52,6 +52,7 @@ document.addEventListener('DOMContentLoaded', function() {
     let silenceTimeout = null;
     let analyser = null;
     let vadAnimationFrame = null;
+    let recordingMode = false; // Toggle for saving recordings
 
     // VAD configuration
     const VAD_THRESHOLD = 0.02; // Voice activity threshold
@@ -60,8 +61,30 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Get DOM elements
     const lottieContainer = document.getElementById('lottie-container');
+    const recordingToggle = document.getElementById('recording-toggle');
+    const recordingStatus = document.getElementById('recording-status');
+    const toggleText = recordingToggle.querySelector('.toggle-text');
 
     let speechFrameCount = 0;
+
+    // Recording toggle button handler
+    recordingToggle.addEventListener('click', function() {
+        recordingMode = !recordingMode;
+
+        if (recordingMode) {
+            recordingToggle.classList.add('active');
+            toggleText.textContent = 'Recording ON';
+            recordingStatus.textContent = 'Saving conversations to /recordings';
+            recordingStatus.classList.add('active');
+            console.log('Recording mode enabled - audio will be saved');
+        } else {
+            recordingToggle.classList.remove('active');
+            toggleText.textContent = 'Recording OFF';
+            recordingStatus.textContent = '';
+            recordingStatus.classList.remove('active');
+            console.log('Recording mode disabled');
+        }
+    });
 
     // Update UI state using blob animation
     function updateState(state) {
@@ -249,12 +272,17 @@ document.addEventListener('DOMContentLoaded', function() {
     function sendAudioToBackend(audioBlob) {
         console.log('Audio blob size:', audioBlob.size, 'bytes');
 
+        if (recordingMode) {
+            console.log('Sending with recording mode enabled');
+        }
+
         const reader = new FileReader();
         reader.onloadend = () => {
             const base64Audio = reader.result.split(',')[1];
             socket.emit('audio_data', {
                 audio: base64Audio,
-                format: 'webm'
+                format: 'webm',
+                recording_mode: recordingMode
             });
         };
         reader.readAsDataURL(audioBlob);
@@ -264,7 +292,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const transcriptionDisplay = document.getElementById('transcription-display');
 
     // Socket.IO connection
-    const socket = io('http://localhost:5000');
+    const socket = io('http://localhost:5001');
 
     socket.on('connect', function() {
         console.log('Connected to backend server');
@@ -278,14 +306,45 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('User said:', data.user_text);
         console.log('Bot responded:', data.bot_text);
 
+        // Log latency information
+        if (data.latency_ms) {
+            console.log(`⏱️ Latency - Total: ${data.latency_ms.total}ms | Average: ${data.latency_ms.average}ms`);
+        }
+
+        // Check if recording was saved
+        if (data.recorded) {
+            console.log('✓ Audio saved to recordings directory');
+        }
+
         // Display bot response
+        let recordingBadge = '';
+        if (data.recorded) {
+            recordingBadge = '<span style="display: inline-block; margin-left: 10px; padding: 4px 10px; background-color: rgba(255, 142, 58, 0.2); border-radius: 12px; font-size: 0.75rem; color: #ff8e3a;">🔴 Recorded</span>';
+        }
+
+        // Display latency information
+        let latencyInfo = '';
+        if (data.latency_ms) {
+            latencyInfo = `
+                <div style="margin-top: 15px; padding: 10px; background-color: rgba(0, 0, 0, 0.3); border-radius: 8px; font-size: 0.85rem;">
+                    <div style="color: rgba(255, 255, 255, 0.5); margin-bottom: 5px;">⏱️ Response Latency:</div>
+                    <div style="color: #ff8e3a;">
+                        <span style="font-weight: 600;">${data.latency_ms.total}ms</span> this response
+                        ${data.latency_ms.average ? `| <span style="font-weight: 600;">${data.latency_ms.average}ms</span> average` : ''}
+                    </div>
+                </div>
+            `;
+        }
+
         transcriptionDisplay.innerHTML = `
             <div style="margin-bottom: 10px; color: rgba(255, 255, 255, 0.6); font-size: 0.9rem;">
                 You: ${data.user_text}
             </div>
             <div style="color: #ff8e3a;">
                 Assistant: ${data.bot_text}
+                ${recordingBadge}
             </div>
+            ${latencyInfo}
         `;
         transcriptionDisplay.classList.add('updating');
 

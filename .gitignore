@@ -29,3 +29,6 @@ pretrained_models/
 # IDE
 .vscode/
 .idea/
+.claude
+
+recordings

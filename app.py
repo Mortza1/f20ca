@@ -11,6 +11,9 @@ import logging
 import requests
 import json
 from dotenv import load_dotenv
+from datetime import datetime
+import shutil
+import time
 
 # Load environment variables
 load_dotenv()
@@ -28,7 +31,7 @@ app.config['SECRET_KEY'] = 'garage-booking-secret'
 # Initialize SocketIO
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
-# Global ASR and TTS models (will be loaded on first use)
+# Global ASR and TTS models (loaded at startup - KEEP HOT!)
 asr_model = None
 tts_model = None
 vocoder_model = None
@@ -39,6 +42,18 @@ OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
 if not OPENROUTER_API_KEY:
     logger.error("OPENROUTER_API_KEY not found in environment variables!")
     raise ValueError("Please set OPENROUTER_API_KEY in .env file")
+
+# Recording directories
+RECORDINGS_DIR = 'recordings'
+COMBINED_AUDIO_DIR = os.path.join(RECORDINGS_DIR, 'combined_audio')
+METADATA_DIR = os.path.join(RECORDINGS_DIR, 'metadata')
+
+# Ensure recording directories exist
+for directory in [COMBINED_AUDIO_DIR, METADATA_DIR]:
+    os.makedirs(directory, exist_ok=True)
+
+# Global latency tracking
+latency_records = []
 
 def get_llm_response(user_message):
     """Get response from LLM via OpenRouter API"""
@@ -85,61 +100,65 @@ def get_llm_response(user_message):
         logger.error(f"Error getting LLM response: {e}")
         return "I'm sorry, I'm having trouble processing your request right now. Please try again."
 
-def load_asr_model():
-    """Load SpeechBrain ASR model (lazy loading)"""
-    global asr_model
-    if asr_model is None:
+def initialize_models():
+    """Load all models at startup and keep them hot in memory"""
+    global asr_model, tts_model, vocoder_model
+
+    logger.info("=" * 60)
+    logger.info("INITIALIZING MODELS AT STARTUP - LOADING INTO MEMORY")
+    logger.info("=" * 60)
+
+    try:
+        # Load ASR model
         logger.info("Loading SpeechBrain ASR model...")
-        try:
-            # Using a pretrained ASR model from SpeechBrain
-            # This will download the model on first run (~300MB)
-            asr_model = EncoderDecoderASR.from_hparams(
-                source="speechbrain/asr-crdnn-rnnlm-librispeech",
-                savedir="pretrained_models/asr-crdnn-rnnlm-librispeech"
-            )
-            logger.info("ASR model loaded successfully!")
-        except Exception as e:
-            logger.error(f"Failed to load ASR model: {e}")
-            raise
-    return asr_model
+        asr_start = time.time()
+        asr_model = EncoderDecoderASR.from_hparams(
+            source="speechbrain/asr-crdnn-rnnlm-librispeech",
+            savedir="pretrained_models/asr-crdnn-rnnlm-librispeech"
+        )
+        asr_time = time.time() - asr_start
+        logger.info(f"✓ ASR model loaded successfully! ({asr_time:.2f}s)")
 
-def load_tts_models():
-    """Load SpeechBrain TTS models (lazy loading)"""
-    global tts_model, vocoder_model
-    if tts_model is None or vocoder_model is None:
+        # Load TTS models
         logger.info("Loading SpeechBrain TTS models...")
-        try:
-            # Load Tacotron2 for text-to-mel spectrogram
-            tts_model = Tacotron2.from_hparams(
-                source="speechbrain/tts-tacotron2-ljspeech",
-                savedir="pretrained_models/tts-tacotron2-ljspeech"
-            )
+        tts_start = time.time()
 
-            # Load HiFiGAN vocoder for mel-to-waveform
-            vocoder_model = HIFIGAN.from_hparams(
-                source="speechbrain/tts-hifigan-ljspeech",
-                savedir="pretrained_models/tts-hifigan-ljspeech"
-            )
+        # Load Tacotron2 for text-to-mel spectrogram
+        tts_model = Tacotron2.from_hparams(
+            source="speechbrain/tts-tacotron2-ljspeech",
+            savedir="pretrained_models/tts-tacotron2-ljspeech"
+        )
+        logger.info("  ✓ Tacotron2 loaded")
 
-            logger.info("TTS models loaded successfully!")
-        except Exception as e:
-            logger.error(f"Failed to load TTS models: {e}")
-            raise
-    return tts_model, vocoder_model
+        # Load HiFiGAN vocoder for mel-to-waveform
+        vocoder_model = HIFIGAN.from_hparams(
+            source="speechbrain/tts-hifigan-ljspeech",
+            savedir="pretrained_models/tts-hifigan-ljspeech"
+        )
+        tts_time = time.time() - tts_start
+        logger.info(f"  ✓ HiFiGAN vocoder loaded ({tts_time:.2f}s)")
+
+        total_time = asr_time + tts_time
+        logger.info("=" * 60)
+        logger.info(f"ALL MODELS LOADED AND HOT! Total time: {total_time:.2f}s")
+        logger.info("Models will stay in memory - no per-request loading")
+        logger.info("=" * 60)
+
+    except Exception as e:
+        logger.error(f"FATAL: Failed to load models at startup: {e}")
+        raise
 
 def text_to_speech(text):
-    """Convert text to speech audio"""
+    """Convert text to speech audio using hot models"""
     try:
         logger.info(f"Generating speech for: {text}")
 
-        # Load TTS models
-        tts, vocoder = load_tts_models()
-
+        # Use hot models (already loaded at startup)
         # Generate mel spectrogram from text
-        mel_output, mel_length, alignment = tts.encode_text(text)
+        mel_output, mel_length, alignment = tts_model.encode_text(text)
 
         # Generate waveform from mel spectrogram
-        waveforms = vocoder.decode_batch(mel_output)
+        waveforms = vocoder_model.decode_batch(mel_output)
 
         # Save to temporary file
         with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as wav_file:
@@ -155,6 +174,71 @@ def text_to_speech(text):
 
     except Exception as e:
         logger.error(f"Error generating speech: {e}")
+        return None
+
+def combine_audio_files(user_wav_path, bot_wav_path, session_id, add_silence=True):
+    """Combine user and bot audio into a single WAV file with optional silence between them"""
+    try:
+        # Load both audio files
+        user_audio = AudioSegment.from_wav(user_wav_path)
+        bot_audio = AudioSegment.from_wav(bot_wav_path)
+
+        # Add 500ms of silence between user and bot audio
+        if add_silence:
+            silence = AudioSegment.silent(duration=500)  # 500ms
+            combined_audio = user_audio + silence + bot_audio
+        else:
+            combined_audio = user_audio + bot_audio
+
+        # Save combined audio
+        dest_path = os.path.join(COMBINED_AUDIO_DIR, f'{session_id}_combined.wav')
+        combined_audio.export(dest_path, format='wav')
+
+        logger.info(f"Saved combined audio: {dest_path}")
+        return dest_path
+    except Exception as e:
+        logger.error(f"Error combining audio files: {e}")
+        return None
+
+def save_recording_metadata(session_id, user_text, bot_text, timestamp, latency_info):
+    """Save metadata for a recording session with latency information"""
+    try:
+        metadata_path = os.path.join(METADATA_DIR, f'{session_id}.json')
+
+        # Calculate total latency
+        total_latency = sum(latency_info.values())
+
+        # Add to global latency tracking
+        latency_records.append(total_latency)
+
+        # Calculate average latency
+        avg_latency = sum(latency_records) / len(latency_records)
+
+        metadata = {
+            'session_id': session_id,
+            'timestamp': timestamp,
+            'user_text': user_text,
+            'bot_text': bot_text,
+            'audio_file': f'{session_id}_combined.wav',
+            'latency_ms': {
+                'audio_conversion': round(latency_info.get('audio_conversion', 0), 2),
+                'asr_transcription': round(latency_info.get('asr_transcription', 0), 2),
+                'llm_response': round(latency_info.get('llm_response', 0), 2),
+                'tts_generation': round(latency_info.get('tts_generation', 0), 2),
+                'total': round(total_latency, 2)
+            },
+            'average_latency_ms': round(avg_latency, 2),
+            'session_count': len(latency_records)
+        }
+
+        with open(metadata_path, 'w') as f:
+            json.dump(metadata, f, indent=2)
+
+        logger.info(f"Saved metadata: {metadata_path}")
+        logger.info(f"Total latency: {total_latency:.2f}ms | Average: {avg_latency:.2f}ms")
+        return avg_latency
+    except Exception as e:
+        logger.error(f"Error saving metadata: {e}")
         return None
 
 def convert_webm_to_wav(webm_data):
@@ -211,10 +295,24 @@ def handle_disconnect():
 def handle_audio_data(data):
     """Handle incoming audio data from frontend"""
     try:
+        # Start total timing
+        start_time = time.time()
+        latency_info = {}
+
         logger.info("Received audio data")
 
+        # Check if recording mode is enabled
+        recording_mode = data.get('recording_mode', False)
+        session_id = None
+        timestamp = None
+
+        if recording_mode:
+            # Generate unique session ID with timestamp
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
+            session_id = f"session_{timestamp}"
+            logger.info(f"Recording mode enabled - Session ID: {session_id}")
+
         # Decode base64 audio
-        audio_format = data.get('format', 'webm')
         audio_base64 = data.get('audio')
 
         if not audio_base64:
@@ -224,30 +322,56 @@ def handle_audio_data(data):
         audio_bytes = base64.b64decode(audio_base64)
         logger.info(f"Decoded audio: {len(audio_bytes)} bytes")
 
-        # Convert WebM to WAV
+        # Convert WebM to WAV (with timing)
+        conversion_start = time.time()
         wav_path = convert_webm_to_wav(audio_bytes)
-        logger.info(f"Converted to WAV: {wav_path}")
+        latency_info['audio_conversion'] = (time.time() - conversion_start) * 1000
+        logger.info(f"Converted to WAV: {wav_path} ({latency_info['audio_conversion']:.2f}ms)")
 
-        # Load ASR model (lazy loading)
-        model = load_asr_model()
+        # Keep a copy of user audio path for later combination
+        user_wav_path = None
+        if recording_mode and session_id:
+            # Save temporary copy for later combination
+            user_wav_path = wav_path.replace('.wav', '_user.wav')
+            shutil.copy2(wav_path, user_wav_path)
 
-        # Transcribe audio
+        # Transcribe audio using hot ASR model (with timing)
         logger.info("Transcribing audio...")
-        transcription = model.transcribe_file(wav_path)
+        asr_start = time.time()
+        transcription = asr_model.transcribe_file(wav_path)
+        latency_info['asr_transcription'] = (time.time() - asr_start) * 1000
+        logger.info(f"Transcription: {transcription} ({latency_info['asr_transcription']:.2f}ms)")
 
-        # Clean up WAV file
+        # Clean up original WAV file
         os.remove(wav_path)
 
-        logger.info(f"Transcription: {transcription}")
-
-        # Get LLM response
+        # Get LLM response (with timing)
+        llm_start = time.time()
         llm_response = get_llm_response(transcription)
+        latency_info['llm_response'] = (time.time() - llm_start) * 1000
+        logger.info(f"LLM response received ({latency_info['llm_response']:.2f}ms)")
 
-        # Generate TTS audio from LLM response
+        # Generate TTS audio from LLM response (with timing)
         logger.info("Generating TTS audio...")
+        tts_start = time.time()
         audio_path = text_to_speech(llm_response)
+        latency_info['tts_generation'] = (time.time() - tts_start) * 1000
+        logger.info(f"TTS generated ({latency_info['tts_generation']:.2f}ms)")
 
+        # Calculate total latency
+        total_latency = (time.time() - start_time) * 1000
+
+        avg_latency = None
         if audio_path:
+            # Save combined audio and metadata if recording mode is enabled
+            if recording_mode and session_id and user_wav_path:
+                # Combine user and bot audio
+                combine_audio_files(user_wav_path, audio_path, session_id)
+                # Save metadata with latency info
+                avg_latency = save_recording_metadata(session_id, transcription, llm_response, timestamp, latency_info)
+                # Clean up temporary user audio file
+                os.remove(user_wav_path)
+
             # Read audio file and encode to base64
             with open(audio_path, 'rb') as f:
                 audio_data = base64.b64encode(f.read()).decode('utf-8')
@@ -260,14 +384,24 @@ def handle_audio_data(data):
                 'user_text': transcription,
                 'bot_text': llm_response,
                 'audio': audio_data,
-                'success': True
+                'success': True,
+                'recorded': recording_mode,
+                'latency_ms': {
+                    'total': round(total_latency, 2),
+                    'average': round(avg_latency, 2) if avg_latency else None
+                }
             })
         else:
             # Fallback if TTS fails
             emit('bot_response', {
                 'user_text': transcription,
                 'bot_text': llm_response,
-                'success': True
+                'success': True,
+                'recorded': recording_mode,
+                'latency_ms': {
+                    'total': round(total_latency, 2),
+                    'average': None
+                }
             })
 
     except Exception as e:
@@ -276,5 +410,11 @@ def handle_audio_data(data):
 
 if __name__ == '__main__':
     logger.info("Starting Garage Booking Assistant server...")
-    logger.info("Server running on http://localhost:5000")
-    socketio.run(app, debug=True, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True)
+
+    # CRITICAL: Load all models at startup - keep them HOT in memory
+    # This prevents per-request loading which kills latency
+    initialize_models()
+
+    logger.info("Server running on http://localhost:5001")
+    logger.info("Models are loaded and ready - no per-request loading overhead!")
+    socketio.run(app, debug=True, host='0.0.0.0', port=5001, allow_unsafe_werkzeug=True)
