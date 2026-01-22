@@ -1,11 +1,8 @@
 flask==3.0.0
 flask-socketio==5.3.5
 python-socketio==5.10.0
-speechbrain==1.0.0
-torch
-torchaudio
 pydub==0.25.1
-numpy
 python-dotenv==1.0.0
 cohere
 requests
+elevenlabs

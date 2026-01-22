@@ -4,7 +4,6 @@ import base64
 import os
 import tempfile
 from pydub import AudioSegment
-from speechbrain.inference import EncoderDecoderASR
 import logging
 import requests
 import json
@@ -13,6 +12,8 @@ from datetime import datetime
 import shutil
 import time
 import cohere
+from elevenlabs.client import ElevenLabs
+from io import BytesIO
 
 # Load environment variables
 load_dotenv()
@@ -30,9 +31,14 @@ app.config['SECRET_KEY'] = 'garage-booking-secret'
 # Initialize SocketIO
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
-# Global ASR model (loaded at startup - KEEP HOT!)
-# TTS is now handled by frontend using ElevenLabs via Puter.js
-asr_model = None
+# ElevenLabs Client for STT
+# TTS is handled by frontend using ElevenLabs via Puter.js
+ELEVENLABS_API_KEY = os.getenv('ELEVENLABS_API_KEY')
+if not ELEVENLABS_API_KEY:
+    logger.error("ELEVENLABS_API_KEY not found in environment variables!")
+    raise ValueError("Please set ELEVENLABS_API_KEY in .env file")
+
+elevenlabs_client = ElevenLabs(api_key=ELEVENLABS_API_KEY)
 
 # LLM Provider Configuration
 LLM_PROVIDER = os.getenv('LLM_PROVIDER', 'cohere').lower()  # Default to cohere
@@ -49,6 +55,7 @@ if LLM_PROVIDER == 'cohere' and not COHERE_API_KEY:
     raise ValueError("Please set COHERE_API_KEY in .env file")
 
 logger.info(f"LLM Provider: {LLM_PROVIDER.upper()}")
+logger.info("STT Provider: ELEVENLABS")
 
 # Recording directories
 RECORDINGS_DIR = 'recordings'
@@ -143,37 +150,9 @@ def get_llm_response(user_message):
         logger.error(f"Error getting LLM response: {e}")
         return "I'm sorry, I'm having trouble processing your request right now. Please try again."
 
-def initialize_models():
-    """Load ASR model at startup and keep it hot in memory"""
-    global asr_model
-
-    logger.info("=" * 60)
-    logger.info("INITIALIZING ASR MODEL AT STARTUP")
-    logger.info("TTS is handled by frontend (ElevenLabs via Puter.js)")
-    logger.info("=" * 60)
-
-    try:
-        # Load ASR model
-        logger.info("Loading SpeechBrain ASR model...")
-        asr_start = time.time()
-        asr_model = EncoderDecoderASR.from_hparams(
-            source="speechbrain/asr-crdnn-rnnlm-librispeech",
-            savedir="pretrained_models/asr-crdnn-rnnlm-librispeech"
-        )
-        asr_time = time.time() - asr_start
-        logger.info(f"✓ ASR model loaded successfully! ({asr_time:.2f}s)")
-
-        logger.info("=" * 60)
-        logger.info(f"ASR MODEL LOADED AND HOT! Load time: {asr_time:.2f}s")
-        logger.info("Model will stay in memory - no per-request loading")
-        logger.info("=" * 60)
-
-    except Exception as e:
-        logger.error(f"FATAL: Failed to load ASR model at startup: {e}")
-        raise
-
-# TTS is now handled by frontend using ElevenLabs via Puter.js
-# No need for backend TTS generation!
+# STT is now handled by ElevenLabs API - no model loading needed!
+# TTS is handled by frontend using ElevenLabs via Puter.js
+# No heavyweight models to load at startup!
 
 def combine_audio_files(user_wav_path, bot_wav_path, session_id, add_silence=True):
     """Combine user and bot audio into a single WAV file with optional silence between them"""
@@ -334,10 +313,22 @@ def handle_audio_data(data):
             user_wav_path = wav_path.replace('.wav', '_user.wav')
             shutil.copy2(wav_path, user_wav_path)
 
-        # Transcribe audio using hot ASR model (with timing)
-        logger.info("Transcribing audio...")
+        # Transcribe audio using ElevenLabs STT (with timing)
+        logger.info("Transcribing audio with ElevenLabs...")
         asr_start = time.time()
-        transcription = asr_model.transcribe_file(wav_path)
+
+        # Read WAV file as BytesIO for ElevenLabs API
+        with open(wav_path, 'rb') as audio_file:
+            audio_data = BytesIO(audio_file.read())
+
+        # Call ElevenLabs STT API
+        transcription_result = elevenlabs_client.speech_to_text.convert(
+            file=audio_data,
+            model_id="scribe_v2",
+            language_code="eng"  # English
+        )
+
+        transcription = transcription_result.text
         latency_info['asr_transcription'] = (time.time() - asr_start) * 1000
         logger.info(f"Transcription: {transcription} ({latency_info['asr_transcription']:.2f}ms)")
 
@@ -385,11 +376,11 @@ def handle_audio_data(data):
 
 if __name__ == '__main__':
     logger.info("Starting Garage Booking Assistant server...")
-
-    # CRITICAL: Load all models at startup - keep them HOT in memory
-    # This prevents per-request loading which kills latency
-    initialize_models()
-
+    logger.info("=" * 60)
+    logger.info("No heavyweight models to load - using API-based services!")
+    logger.info("STT: ElevenLabs API | TTS: ElevenLabs (frontend)")
+    logger.info(f"LLM: {LLM_PROVIDER.upper()}")
+    logger.info("=" * 60)
     logger.info("Server running on http://localhost:5001")
-    logger.info("Models are loaded and ready - no per-request loading overhead!")
+    logger.info("Ready for requests!")
     socketio.run(app, debug=True, host='0.0.0.0', port=5001, allow_unsafe_werkzeug=True)
