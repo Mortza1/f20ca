@@ -181,6 +181,7 @@ def handle_audio_data(data):
 
         # Calculate backend latency (excludes frontend TTS)
         backend_latency = (time.time() - start_time) * 1000
+        logger.info(f"Total backend latency: {backend_latency:.2f}ms (conversion: {latency_info['audio_conversion']:.2f}ms + ASR: {latency_info['asr_transcription']:.2f}ms + LLM: {latency_info['llm_response']:.2f}ms + overhead: {backend_latency - sum(latency_info.values()):.2f}ms)")
 
         # Save metadata if recording mode is enabled
         avg_latency = None
