@@ -1,4 +1,4 @@
-from flask import Flask, render_template, send_from_directory
+from flask import Flask, render_template, send_from_directory, request
 from flask_socketio import SocketIO, emit
 import base64
 import os
@@ -11,9 +11,11 @@ from elevenlabs.client import ElevenLabs
 from io import BytesIO
 
 # Import utilities
-from utils.llm import get_llm_response
+from utils.llm import get_llm_response, build_booking_system_prompt
 from utils.audio import convert_webm_to_wav, combine_audio_files
 from utils.recording import save_recording_metadata
+from utils.booking_state import get_or_create_session
+from utils.calendar import initialize_calendar
 
 # Load environment variables
 load_dotenv()
@@ -65,6 +67,9 @@ METADATA_DIR = os.path.join(RECORDINGS_DIR, 'metadata')
 # Ensure recording directories exist
 for directory in [COMBINED_AUDIO_DIR, METADATA_DIR]:
     os.makedirs(directory, exist_ok=True)
+
+# Initialize calendar
+initialize_calendar()
 
 # Global latency tracking
 latency_records = []
@@ -164,16 +169,33 @@ def handle_audio_data(data):
         # Clean up original WAV file
         os.remove(wav_path)
 
+        # Handle empty transcription
+        if not transcription or transcription.strip() == "":
+            logger.warning("Empty transcription received, skipping LLM call")
+            emit('error', {'message': 'Could not understand audio. Please try again.'})
+            return
+
+        # Get or create booking session for this socket connection
+        session_id_booking = request.sid  # Use Flask-SocketIO's session ID
+        booking_session = get_or_create_session(session_id_booking)
+
+        # Build system prompt based on current booking state
+        system_prompt = build_booking_system_prompt(booking_session)
+
         # Get LLM response (with timing)
         llm_start = time.time()
         llm_response = get_llm_response(
             transcription,
             LLM_PROVIDER,
             openrouter_key=OPENROUTER_API_KEY,
-            cohere_key=COHERE_API_KEY
+            cohere_key=COHERE_API_KEY,
+            system_message=system_prompt
         )
         latency_info['llm_response'] = (time.time() - llm_start) * 1000
         logger.info(f"LLM response received ({latency_info['llm_response']:.2f}ms)")
+
+        # Add this conversation turn to history
+        booking_session.add_to_history(transcription, llm_response)
 
         # TTS is now handled by frontend using ElevenLabs via Puter.js
         # No backend TTS generation needed!

@@ -2,7 +2,6 @@
 LLM Provider utilities for Garage Booking Assistant
 Supports multiple LLM providers: OpenRouter, Cohere
 """
-import os
 import logging
 import requests
 import json
@@ -52,12 +51,13 @@ def get_llm_response_openrouter(user_message, api_key):
         raise
 
 
-def get_llm_response_cohere(user_message, api_key):
+def get_llm_response_cohere(user_message, api_key, system_message=None):
     """Get response from Cohere API"""
     try:
         co = cohere.ClientV2(api_key)
 
-        system_message = "You are a helpful garage booking assistant. Help users book garage appointments, check availability, and answer questions about garage services. Be concise and friendly."
+        if system_message is None:
+            system_message = "You are a helpful garage booking assistant. Help users book garage appointments, check availability, and answer questions about garage services. Be concise and friendly."
 
         response = co.chat(
             model="command-a-03-2025",
@@ -75,7 +75,39 @@ def get_llm_response_cohere(user_message, api_key):
         raise
 
 
-def get_llm_response(user_message, provider, openrouter_key=None, cohere_key=None):
+def build_booking_system_prompt(booking_state):
+    """
+    Build a conversation-aware system prompt
+    Uses history instead of tracking individual fields - simpler and faster
+    """
+    conversation_history = booking_state.get_conversation_history()
+
+    system_prompt = f"""You are a garage booking assistant. Your job is to collect booking information efficiently.
+
+INFORMATION NEEDED (in order):
+1. Full name
+2. Car registration number
+3. Car make and model
+4. Current mileage
+5. Service contract/warranty? (yes/no)
+6. What service or issue brings them in
+
+CONVERSATION SO FAR:
+{conversation_history}
+
+RULES:
+- Be concise - max 2 short sentences
+- Ask for ONE missing piece of information at a time
+- Follow the order above
+- Never repeat questions - check the conversation history
+- Don't ask for date/time until all 6 pieces above are collected
+- Once you have all 6, say you'll check available dates
+- Don't be chatty - stay focused on the task"""
+
+    return system_prompt
+
+
+def get_llm_response(user_message, provider, openrouter_key=None, cohere_key=None, system_message=None):
     """Get response from configured LLM provider"""
     try:
         logger.info(f"Sending to {provider.upper()}: {user_message}")
@@ -83,7 +115,7 @@ def get_llm_response(user_message, provider, openrouter_key=None, cohere_key=Non
         if provider == 'openrouter':
             llm_response = get_llm_response_openrouter(user_message, openrouter_key)
         elif provider == 'cohere':
-            llm_response = get_llm_response_cohere(user_message, cohere_key)
+            llm_response = get_llm_response_cohere(user_message, cohere_key, system_message=system_message)
         else:
             raise ValueError(f"Unknown LLM provider: {provider}")
 
