@@ -6,3 +6,5 @@ python-dotenv==1.0.0
 cohere
 requests
 elevenlabs
+silero-vad
+torch

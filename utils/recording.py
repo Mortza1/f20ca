@@ -31,6 +31,8 @@ def save_recording_metadata(session_id, user_text, bot_text, timestamp, latency_
             'audio_file': f'{session_id}_combined.wav',
             'latency_ms': {
                 'audio_conversion': round(latency_info.get('audio_conversion', 0), 2),
+                'vad_validation': round(latency_info.get('vad_validation', 0), 2),
+                'silence_trimming': round(latency_info.get('silence_trimming', 0), 2),
                 'asr_transcription': round(latency_info.get('asr_transcription', 0), 2),
                 'llm_response': round(latency_info.get('llm_response', 0), 2),
                 'tts_generation': round(latency_info.get('tts_generation', 0), 2),

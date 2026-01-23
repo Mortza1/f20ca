@@ -7,3 +7,8 @@ I changed the tts from speech brain to eleven labs via puter, and latency droppe
 
 
 okkkk... so i am using eleven labs stt, and it is around 2.5s now
+
+added vad,  updated the booking system, we are now at 2.5 - 3s range,  here is the breakdown.. 
+INFO:__main__:Total backend latency: 2849.65ms (conversion: 781.35ms + VAD: 385.49ms + trim: 62.28ms + ASR: 697.25ms + LLM: 920.95ms + overhead: 2.34ms)
+
+ofc, the next obvious improvement is at conversion by streaming our responses.

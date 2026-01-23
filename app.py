@@ -16,6 +16,7 @@ from utils.audio import convert_webm_to_wav, combine_audio_files
 from utils.recording import save_recording_metadata
 from utils.booking_state import get_or_create_session
 from utils.calendar import initialize_calendar
+from utils.vad import initialize_vad, validate_speech, trim_silence
 
 # Load environment variables
 load_dotenv()
@@ -70,6 +71,9 @@ for directory in [COMBINED_AUDIO_DIR, METADATA_DIR]:
 
 # Initialize calendar
 initialize_calendar()
+
+# Initialize VAD model
+initialize_vad()
 
 # Global latency tracking
 latency_records = []
@@ -140,6 +144,29 @@ def handle_audio_data(data):
         latency_info['audio_conversion'] = (time.time() - conversion_start) * 1000
         logger.info(f"Converted to WAV: {wav_path} ({latency_info['audio_conversion']:.2f}ms)")
 
+        # Validate speech with VAD (with timing)
+        vad_start = time.time()
+        has_speech, speech_duration = validate_speech(wav_path, min_speech_duration_ms=200)
+        latency_info['vad_validation'] = (time.time() - vad_start) * 1000
+        logger.info(f"VAD validation: {has_speech} ({latency_info['vad_validation']:.2f}ms)")
+
+        if not has_speech:
+            logger.warning("No speech detected by VAD, rejecting audio")
+            os.remove(wav_path)
+            emit('error', {'message': 'No speech detected. Please try again.'})
+            return
+
+        # Trim silence to reduce STT latency (with timing)
+        trim_start = time.time()
+        trim_success, trimmed_path, duration_saved = trim_silence(wav_path)
+        latency_info['silence_trimming'] = (time.time() - trim_start) * 1000
+
+        if trim_success:
+            logger.info(f"Trimmed silence: saved {duration_saved}ms ({latency_info['silence_trimming']:.2f}ms processing)")
+            # Replace wav_path with trimmed version
+            os.remove(wav_path)
+            wav_path = trimmed_path
+
         # Keep a copy of user audio path for later combination
         user_wav_path = None
         if recording_mode and session_id:
@@ -203,7 +230,7 @@ def handle_audio_data(data):
 
         # Calculate backend latency (excludes frontend TTS)
         backend_latency = (time.time() - start_time) * 1000
-        logger.info(f"Total backend latency: {backend_latency:.2f}ms (conversion: {latency_info['audio_conversion']:.2f}ms + ASR: {latency_info['asr_transcription']:.2f}ms + LLM: {latency_info['llm_response']:.2f}ms + overhead: {backend_latency - sum(latency_info.values()):.2f}ms)")
+        logger.info(f"Total backend latency: {backend_latency:.2f}ms (conversion: {latency_info['audio_conversion']:.2f}ms + VAD: {latency_info['vad_validation']:.2f}ms + trim: {latency_info['silence_trimming']:.2f}ms + ASR: {latency_info['asr_transcription']:.2f}ms + LLM: {latency_info['llm_response']:.2f}ms + overhead: {backend_latency - sum(latency_info.values()):.2f}ms)")
 
         # Save metadata if recording mode is enabled
         avg_latency = None
@@ -242,8 +269,10 @@ def handle_audio_data(data):
 if __name__ == '__main__':
     logger.info("Starting Garage Booking Assistant server...")
     logger.info("=" * 60)
-    logger.info("No heavyweight models to load - using API-based services!")
-    logger.info("STT: ElevenLabs API | TTS: ElevenLabs (frontend)")
+    logger.info("Loading models...")
+    logger.info("VAD: Silero VAD (local)")
+    logger.info("STT: ElevenLabs API")
+    logger.info("TTS: ElevenLabs (frontend)")
     logger.info(f"LLM: {LLM_PROVIDER.upper()}")
     logger.info("=" * 60)
     logger.info("Server running on http://localhost:5001")
