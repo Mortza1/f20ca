@@ -5,3 +5,7 @@ of tool calling, increasing the overall latency.
 Each booking requires capturing a full name, car detail, problem with the car,  and the date and time user is comfortable with. 
 
 so let us complete the booking system first, before we go off improving our latency system.
+
+-- 
+right, so the naive version waits for audio to complete, save the file and then run the vad on it. that makes no sense. We will 
+have the audio bytes streamed  and used directly by VAD.

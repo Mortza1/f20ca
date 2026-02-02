@@ -6,6 +6,7 @@ import os
 import tempfile
 import logging
 from pydub import AudioSegment
+import subprocess
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,26 @@ def convert_webm_to_wav(webm_data):
 
     except Exception as e:
         logger.error(f"Error converting audio: {e}")
+        raise
+
+# In-memory conversion using ffmpeg
+def convert_webm_to_wav_bytes(webm_data):
+    try:    
+        process = subprocess.Popen(
+            ["ffmpeg", "-i", "pipe:0", "-f", "wav", "-ar", "16000", "-ac", "1", "pipe:1"],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL
+        )
+        wav_bytes, _ = process.communicate(input=webm_data)
+        if not wav_bytes:
+                raise ValueError("FFmpeg produced no output")
+                
+        logger.info(f"Converted {len(webm_data)} bytes WebM to {len(wav_bytes)} bytes WAV (in-memory)")
+        return wav_bytes
+    
+    except Exception as e:
+        logger.error(f"In-memory audio conversion failed: {e}")
         raise
 
 

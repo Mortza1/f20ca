@@ -12,11 +12,11 @@ from io import BytesIO
 
 # Import utilities
 from utils.llm import get_llm_response, build_booking_system_prompt
-from utils.audio import convert_webm_to_wav, combine_audio_files
+from utils.audio import convert_webm_to_wav, convert_webm_to_wav_bytes
 from utils.recording import save_recording_metadata
 from utils.booking_state import get_or_create_session
 from utils.calendar import initialize_calendar
-from utils.vad import initialize_vad, validate_speech, trim_silence
+from utils.vad import initialize_vad, validate_speech, validate_speech_bytes, trim_silence
 
 # Load environment variables
 load_dotenv()
@@ -138,63 +138,95 @@ def handle_audio_data(data):
         audio_bytes = base64.b64decode(audio_base64)
         logger.info(f"Decoded audio: {len(audio_bytes)} bytes")
 
-        # Convert WebM to WAV (with timing)
-        conversion_start = time.time()
-        wav_path = convert_webm_to_wav(audio_bytes)
-        latency_info['audio_conversion'] = (time.time() - conversion_start) * 1000
-        logger.info(f"Converted to WAV: {wav_path} ({latency_info['audio_conversion']:.2f}ms)")
+        # # Convert WebM to WAV (with timing)
+        # conversion_start = time.time()
+        # wav_path = convert_webm_to_wav(audio_bytes)
+        # latency_info['audio_conversion'] = (time.time() - conversion_start) * 1000
+        # logger.info(f"Converted to WAV: {wav_path} ({latency_info['audio_conversion']:.2f}ms)")
 
-        # Validate speech with VAD (with timing)
+        # # Validate speech with VAD (with timing)
+        # vad_start = time.time()
+        # has_speech, speech_duration = validate_speech(wav_path, min_speech_duration_ms=200)
+        # latency_info['vad_validation'] = (time.time() - vad_start) * 1000
+        # logger.info(f"VAD validation: {has_speech} ({latency_info['vad_validation']:.2f}ms)")
+
+        # if not has_speech:
+        #     logger.warning("No speech detected by VAD, rejecting audio")
+        #     os.remove(wav_path)
+        #     emit('error', {'message': 'No speech detected. Please try again.'})
+        #     return
+
+        # # Trim silence to reduce STT latency (with timing)
+        # trim_start = time.time()
+        # trim_success, trimmed_path, duration_saved = trim_silence(wav_path)
+        # latency_info['silence_trimming'] = (time.time() - trim_start) * 1000
+
+        # if trim_success:
+        #     logger.info(f"Trimmed silence: saved {duration_saved}ms ({latency_info['silence_trimming']:.2f}ms processing)")
+        #     # Replace wav_path with trimmed version
+        #     os.remove(wav_path)
+        #     wav_path = trimmed_path
+
+        conversion_start = time.time()
+        wav_bytes = convert_webm_to_wav_bytes(audio_bytes)
+        latency_info['audio_conversion'] = (time.time() - conversion_start) * 1000
+        logger.info(f"Converted to WAV in-memory: {len(wav_bytes)} bytes ({latency_info['audio_conversion']:.2f}ms)")
+
         vad_start = time.time()
-        has_speech, speech_duration = validate_speech(wav_path, min_speech_duration_ms=200)
+        has_speech, speech_duration = validate_speech_bytes(wav_bytes, min_speech_duration_ms=250)
         latency_info['vad_validation'] = (time.time() - vad_start) * 1000
         logger.info(f"VAD validation: {has_speech} ({latency_info['vad_validation']:.2f}ms)")
 
         if not has_speech:
             logger.warning("No speech detected by VAD, rejecting audio")
-            os.remove(wav_path)
             emit('error', {'message': 'No speech detected. Please try again.'})
             return
+        
+        latency_info['silence_trimming'] = 0  # No trimming in in-memory path
 
-        # Trim silence to reduce STT latency (with timing)
-        trim_start = time.time()
-        trim_success, trimmed_path, duration_saved = trim_silence(wav_path)
-        latency_info['silence_trimming'] = (time.time() - trim_start) * 1000
+        # # Keep a copy of user audio path for later combination
+        # user_wav_path = None
+        # if recording_mode and session_id:
+        #     # Save temporary copy for later combination
+        #     user_wav_path = wav_path.replace('.wav', '_user.wav')
+        #     shutil.copy2(wav_path, user_wav_path)
 
-        if trim_success:
-            logger.info(f"Trimmed silence: saved {duration_saved}ms ({latency_info['silence_trimming']:.2f}ms processing)")
-            # Replace wav_path with trimmed version
-            os.remove(wav_path)
-            wav_path = trimmed_path
+        # # Transcribe audio using ElevenLabs STT (with timing)
+        # logger.info("Transcribing audio with ElevenLabs...")
+        # asr_start = time.time()
 
-        # Keep a copy of user audio path for later combination
-        user_wav_path = None
-        if recording_mode and session_id:
-            # Save temporary copy for later combination
-            user_wav_path = wav_path.replace('.wav', '_user.wav')
-            shutil.copy2(wav_path, user_wav_path)
+        # # Read WAV file as BytesIO for ElevenLabs API
+        # with open(wav_path, 'rb') as audio_file:
+        #     audio_data = BytesIO(audio_file.read())
 
-        # Transcribe audio using ElevenLabs STT (with timing)
+        # # Call ElevenLabs STT API
+        # transcription_result = elevenlabs_client.speech_to_text.convert(
+        #     file=audio_data,
+        #     model_id="scribe_v2",
+        #     language_code="eng"  # English
+        # )
+
+        # transcription = transcription_result.text
+        # latency_info['asr_transcription'] = (time.time() - asr_start) * 1000
+        # logger.info(f"Transcription: {transcription} ({latency_info['asr_transcription']:.2f}ms)")
+
+        # # Clean up original WAV file
+        # os.remove(wav_path)
+
         logger.info("Transcribing audio with ElevenLabs...")
         asr_start = time.time()
 
-        # Read WAV file as BytesIO for ElevenLabs API
-        with open(wav_path, 'rb') as audio_file:
-            audio_data = BytesIO(audio_file.read())
+        audio_data = BytesIO(wav_bytes)
 
-        # Call ElevenLabs STT API
         transcription_result = elevenlabs_client.speech_to_text.convert(
             file=audio_data,
             model_id="scribe_v2",
-            language_code="eng"  # English
+            language_code="eng"
         )
 
         transcription = transcription_result.text
         latency_info['asr_transcription'] = (time.time() - asr_start) * 1000
         logger.info(f"Transcription: {transcription} ({latency_info['asr_transcription']:.2f}ms)")
-
-        # Clean up original WAV file
-        os.remove(wav_path)
 
         # Handle empty transcription
         if not transcription or transcription.strip() == "":
@@ -232,22 +264,41 @@ def handle_audio_data(data):
         backend_latency = (time.time() - start_time) * 1000
         logger.info(f"Total backend latency: {backend_latency:.2f}ms (conversion: {latency_info['audio_conversion']:.2f}ms + VAD: {latency_info['vad_validation']:.2f}ms + trim: {latency_info['silence_trimming']:.2f}ms + ASR: {latency_info['asr_transcription']:.2f}ms + LLM: {latency_info['llm_response']:.2f}ms + overhead: {backend_latency - sum(latency_info.values()):.2f}ms)")
 
-        # Save metadata if recording mode is enabled
+        # # Save metadata if recording mode is enabled
+        # avg_latency = None
+        # if recording_mode and session_id and user_wav_path:
+        #     # Note: We only save user audio now, bot audio is generated on frontend
+        #     # Save metadata with latency info
+        #     avg_latency = save_recording_metadata(
+        #         session_id,
+        #         transcription,
+        #         llm_response,
+        #         timestamp,
+        #         latency_info,
+        #         METADATA_DIR,
+        #         latency_records
+        #     )
+        #     # Clean up temporary user audio file
+        #     os.remove(user_wav_path)
+
         avg_latency = None
-        if recording_mode and session_id and user_wav_path:
-            # Note: We only save user audio now, bot audio is generated on frontend
-            # Save metadata with latency info
-            avg_latency = save_recording_metadata(
-                session_id,
-                transcription,
-                llm_response,
-                timestamp,
-                latency_info,
-                METADATA_DIR,
-                latency_records
-            )
-            # Clean up temporary user audio file
-            os.remove(user_wav_path)
+        if recording_mode and session_id:
+            # Write WAV file off the critical path
+            user_wav_path = os.path.join(COMBINED_AUDIO_DIR, f"{session_id}_user.wav")
+            with open(user_wav_path, "wb") as f:
+                f.write(wav_bytes)
+            logger.info(f"Saved recording (off critical path): {user_wav_path}")
+
+         # Save metadata
+        avg_latency = save_recording_metadata(
+            session_id,
+            transcription,
+            llm_response,
+            timestamp,
+            latency_info,
+            METADATA_DIR,
+            latency_records
+        )
 
         # Send LLM response (text only, no audio) back to frontend
         # Frontend will generate speech using ElevenLabs via Puter.js

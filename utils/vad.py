@@ -7,6 +7,9 @@ import torch
 from silero_vad import load_silero_vad, read_audio, get_speech_timestamps
 from pydub import AudioSegment
 import os
+import soundfile as sf
+import numpy as np
+from io import BytesIO
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +77,44 @@ def validate_speech(wav_path, min_speech_duration_ms=250):
     except Exception as e:
         logger.error(f"Error validating speech: {e}")
         return True, 0  # Fail open - assume speech if error
+    
+def validate_speech_bytes(wav_bytes, min_speech_duration_ms=200):
+    global vad_model
+
+    if vad_model is None:
+        logger.warning("VAD model not initialized, skipping validation")
+        return True, 0  # Assume speech if VAD not available
+    try:
+        audio, sample_rate = sf.read(BytesIO(wav_bytes))
+        if len(audio.shape) > 1:
+            audio = np.mean(audio, axis=1)  # Convert to mono if stereo
+
+        wav = torch.from_numpy(audio).float()
+
+        speech_timestamps = get_speech_timestamps(
+            wav,
+            vad_model,
+            return_seconds=True
+        )
+
+        if not speech_timestamps:
+            logger.info("No speech detected in audio")
+            return False, 0
+        
+        total_speech_duration = sum(
+            (segment['end'] - segment['start']) * 1000  # Convert to ms
+            for segment in speech_timestamps
+        )
+
+        has_speech = total_speech_duration >= min_speech_duration_ms
+
+        logger.info(f"Speech validation: {has_speech} (duration: {total_speech_duration:.2f}ms)")
+        return has_speech, total_speech_duration
+    
+    except Exception as e:
+        logger.error(f"Error validating speech: {e}")
+        return True, 0
+    
 
 
 def trim_silence(wav_path, output_path=None):

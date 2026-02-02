@@ -8,3 +8,4 @@ requests
 elevenlabs
 silero-vad
 torch
+soundfile
