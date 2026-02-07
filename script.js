@@ -52,7 +52,11 @@ document.addEventListener('DOMContentLoaded', function() {
     let silenceTimeout = null;
     let analyser = null;
     let vadAnimationFrame = null;
-    let recordingMode = false; // Toggle for saving recordings
+    let recordingMode = false; // Toggle for saving recordings (LEGACY - kept for compatibility)
+
+    // NEW: Session-based recording state
+    let isRecordingSession = false;
+    let currentRecordingSessionId = null;
 
     // VAD configuration
     const VAD_THRESHOLD = 0.02; // Voice activity threshold
@@ -67,22 +71,30 @@ document.addEventListener('DOMContentLoaded', function() {
 
     let speechFrameCount = 0;
 
-    // Recording toggle button handler
-    recordingToggle.addEventListener('click', function() {
-        recordingMode = !recordingMode;
+    let streamingBotText = "";
+    let streamingActive = false;
 
-        if (recordingMode) {
+
+    // Recording toggle button handler - NOW CONTROLS SESSION RECORDING
+    recordingToggle.addEventListener('click', function() {
+        if (!isRecordingSession) {
+            // Start recording session
+            socket.emit('start_recording');
+            isRecordingSession = true;
             recordingToggle.classList.add('active');
-            toggleText.textContent = 'Recording ON';
-            recordingStatus.textContent = 'Saving conversations to /recordings';
+            toggleText.textContent = 'Recording Session...';
+            recordingStatus.textContent = '🔴 Recording full conversation';
             recordingStatus.classList.add('active');
-            console.log('Recording mode enabled - audio will be saved');
+            console.log('🔴 Started recording session');
         } else {
+            // Stop recording session
+            socket.emit('stop_recording');
+            isRecordingSession = false;
             recordingToggle.classList.remove('active');
-            toggleText.textContent = 'Recording OFF';
+            toggleText.textContent = 'Record Session';
             recordingStatus.textContent = '';
             recordingStatus.classList.remove('active');
-            console.log('Recording mode disabled');
+            console.log('⏹️ Stopped recording session');
         }
     });
 
@@ -272,8 +284,8 @@ document.addEventListener('DOMContentLoaded', function() {
     function sendAudioToBackend(audioBlob) {
         console.log('Audio blob size:', audioBlob.size, 'bytes');
 
-        if (recordingMode) {
-            console.log('Sending with recording mode enabled');
+        if (isRecordingSession) {
+            console.log('📼 Sending audio as part of recording session');
         }
 
         const reader = new FileReader();
@@ -282,7 +294,7 @@ document.addEventListener('DOMContentLoaded', function() {
             socket.emit('audio_data', {
                 audio: base64Audio,
                 format: 'webm',
-                recording_mode: recordingMode
+                recording_mode: recordingMode // LEGACY - kept for backward compatibility
             });
         };
         reader.readAsDataURL(audioBlob);
@@ -302,6 +314,57 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('Disconnected from backend server');
     });
 
+    // NEW: Handle recording session events
+    socket.on('recording_started', function(data) {
+        currentRecordingSessionId = data.session_id;
+        console.log(`✅ Recording session started: ${data.session_id}`);
+        
+        // Show notification
+        showNotification('🎙️ Recording session started', 'success');
+    });
+
+    socket.on('recording_stopped', function(data) {
+        console.log(`✅ Recording saved: ${data.session_id}`);
+        if (data.filename) {
+            console.log(`📁 Filename: ${data.filename}`);
+        }
+        if (data.average_latency_ms) {
+            console.log(`⏱️ Average latency: ${data.average_latency_ms}ms`);
+        }
+        currentRecordingSessionId = null;
+        
+        // Show notification with filename
+        const message = data.filename 
+            ? `✅ Recording saved: ${data.filename}` 
+            : `✅ Recording saved: ${data.session_id}`;
+        showNotification(message, 'success');
+    });
+
+    socket.on('bot_stream_start', function() {
+        streamingActive = true;
+        streamingBotText = "";
+        console.log("🧠 LLM streaming started");
+    
+        transcriptionDisplay.innerHTML = `
+            <div style="color: rgba(255,255,255,0.6)">Assistant:</div>
+            <div id="streaming-text" style="color: #ff8e3a;"></div>
+        `;
+    });
+
+    socket.on('bot_token', function(data) {
+        streamingBotText += data.token;
+    
+        const el = document.getElementById("streaming-text");
+        if (el) {
+            el.textContent = streamingBotText;
+        }
+    });
+
+    socket.on('bot_stream_end', function() {
+        streamingActive = false;
+        console.log("🧠 LLM streaming finished");
+    });
+
     socket.on('bot_response', function(data) {
         console.log('User said:', data.user_text);
         console.log('Bot responded:', data.bot_text);
@@ -311,15 +374,15 @@ document.addEventListener('DOMContentLoaded', function() {
             console.log(`⏱️ Backend Latency: ${data.latency_ms.backend}ms | Average: ${data.latency_ms.average}ms`);
         }
 
-        // Check if recording was saved
-        if (data.recorded) {
-            console.log('✓ Audio saved to recordings directory');
+        // Check if part of recording session
+        if (data.is_recording) {
+            console.log(`🎙️ Turn recorded in session: ${data.session_id}`);
         }
 
         // Display bot response
         let recordingBadge = '';
-        if (data.recorded) {
-            recordingBadge = '<span style="display: inline-block; margin-left: 10px; padding: 4px 10px; background-color: rgba(255, 142, 58, 0.2); border-radius: 12px; font-size: 0.75rem; color: #ff8e3a;">🔴 Recorded</span>';
+        if (data.is_recording) {
+            recordingBadge = '<span style="display: inline-block; margin-left: 10px; padding: 4px 10px; background-color: rgba(255, 142, 58, 0.2); border-radius: 12px; font-size: 0.75rem; color: #ff8e3a;">🔴 Recording</span>';
         }
 
         // Display latency information
@@ -370,6 +433,34 @@ document.addEventListener('DOMContentLoaded', function() {
         .then(audio => {
             console.log('ElevenLabs audio ready, playing...');
 
+            // NEW: If recording session is active, send bot audio to backend
+            if (isRecordingSession && currentRecordingSessionId) {
+                console.log('📢 Capturing bot audio for recording...');
+                
+                // Get the audio blob from the audio element
+                fetch(audio.src)
+                    .then(response => response.blob())
+                    .then(blob => {
+                        // Convert blob to base64
+                        const reader = new FileReader();
+                        reader.onloadend = () => {
+                            const base64Audio = reader.result.split(',')[1];
+                            
+                            // Send to backend
+                            socket.emit('bot_audio', {
+                                audio: base64Audio,
+                                session_id: currentRecordingSessionId
+                            });
+                            
+                            console.log('✅ Bot audio sent to backend');
+                        };
+                        reader.readAsDataURL(blob);
+                    })
+                    .catch(error => {
+                        console.error('Error capturing bot audio:', error);
+                    });
+            }
+
             // Play the audio
             audio.play();
 
@@ -400,6 +491,63 @@ document.addEventListener('DOMContentLoaded', function() {
     socket.on('status', function(data) {
         console.log('Status:', data.message);
     });
+
+    // Helper function: Show notification
+    function showNotification(message, type = 'info') {
+        const notification = document.createElement('div');
+        notification.className = `notification notification-${type}`;
+        notification.textContent = message;
+        notification.style.cssText = `
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: ${type === 'success' ? '#10b981' : type === 'error' ? '#ef4444' : '#3b82f6'};
+            color: white;
+            padding: 15px 25px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            z-index: 10000;
+            animation: slideInNotification 0.3s ease-out;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        `;
+        
+        document.body.appendChild(notification);
+        
+        setTimeout(() => {
+            notification.style.animation = 'slideOutNotification 0.3s ease-out';
+            setTimeout(() => notification.remove(), 300);
+        }, 3000);
+    }
+
+    // Add notification animations to document
+    if (!document.getElementById('notification-styles')) {
+        const style = document.createElement('style');
+        style.id = 'notification-styles';
+        style.textContent = `
+            @keyframes slideInNotification {
+                from {
+                    transform: translateX(400px);
+                    opacity: 0;
+                }
+                to {
+                    transform: translateX(0);
+                    opacity: 1;
+                }
+            }
+            
+            @keyframes slideOutNotification {
+                from {
+                    transform: translateX(0);
+                    opacity: 1;
+                }
+                to {
+                    transform: translateX(400px);
+                    opacity: 0;
+                }
+            }
+        `;
+        document.head.appendChild(style);
+    }
 
     // Auto-start continuous listening on page load
     initializeContinuousListening();

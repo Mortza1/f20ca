@@ -74,6 +74,51 @@ def get_llm_response_cohere(user_message, api_key, system_message=None):
         logger.error(f"Cohere Error: {e}")
         raise
 
+def stream_llm_response_cohere(user_message, api_key, system_message=None):
+    try:
+        co = cohere.ClientV2(api_key)
+
+        if system_message is None:
+            system_message = "You are a helpful garage booking assistant. Help users book garage appointments, check availability, and answer questions about garage services. Be concise and friendly."
+
+        stream = co.chat_stream(
+            model="command-a-03-2025",
+            messages=[
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": user_message}
+            ],
+            max_tokens=500
+        )
+
+        for event in stream:
+            if not hasattr(event, "type"):
+                continue
+
+            if event.type == "content-delta":
+                delta = event.delta
+
+                # ✅ Case 1: Cohere docs style → event.delta.message.content.text
+                if hasattr(delta, "message"):
+                    msg = delta.message
+                    if hasattr(msg, "content") and hasattr(msg.content, "text"):
+                        token = msg.content.text
+                        if token:
+                            yield token
+                            continue
+
+                # ✅ Case 2: Older structured format → event.delta.content[*].text
+                if hasattr(delta, "content"):
+                    for item in delta.content:
+                        if getattr(item, "type", None) == "text":
+                            token = item.text
+                            if token:
+                                yield token
+
+    except Exception as e:
+        logger.error(f"Cohere Streaming Error: {e}")
+        raise
+
+
 
 def build_booking_system_prompt(booking_state):
     """
@@ -125,3 +170,12 @@ def get_llm_response(user_message, provider, openrouter_key=None, cohere_key=Non
     except Exception as e:
         logger.error(f"Error getting LLM response: {e}")
         return "I'm sorry, I'm having trouble processing your request right now. Please try again."
+
+
+def stream_llm_response(user_message, provider, openrouter_key=None, cohere_key=None, system_message=None):
+    if provider == 'openrouter':
+        raise NotImplementedError("Streaming not implemented for OpenRouter yet")
+    elif provider == 'cohere':
+        return stream_llm_response_cohere(user_message, cohere_key, system_message=system_message)
+    else:
+        raise ValueError(f"Unknown LLM provider: {provider}")

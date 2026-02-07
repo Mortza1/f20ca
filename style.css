@@ -355,3 +355,175 @@ body {
         margin-bottom: 15px;
     }
 }
+
+/* ============================================================
+   RECORDING BUTTON IMPROVEMENTS
+   Add these styles to your existing style.css
+   ============================================================ */
+
+/* Recording Controls Container */
+.recording-controls {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 20px;
+    padding: 15px;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 12px;
+}
+
+/* Recording Toggle Button */
+.toggle-btn {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 24px;
+    font-size: 1rem;
+    font-weight: 600;
+    color: white;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: none;
+    border-radius: 25px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+}
+
+.toggle-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+}
+
+.toggle-btn:active {
+    transform: translateY(0);
+}
+
+/* Recording Active State */
+.toggle-btn.active {
+    background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%);
+    box-shadow: 0 4px 15px rgba(255, 107, 107, 0.4);
+    animation: recording-pulse 1.5s ease-in-out infinite;
+}
+
+.toggle-btn.active:hover {
+    box-shadow: 0 6px 20px rgba(255, 107, 107, 0.5);
+}
+
+/* Recording Icon */
+.toggle-icon {
+    font-size: 1.2rem;
+    display: inline-flex;
+    align-items: center;
+}
+
+/* Recording Status Text */
+.recording-status {
+    font-size: 0.9rem;
+    color: rgba(255, 255, 255, 0.6);
+    font-weight: 500;
+    text-align: center;
+    min-height: 20px;
+    transition: all 0.3s ease;
+}
+
+.recording-status.active {
+    color: #ff6b6b;
+    font-weight: 600;
+}
+
+/* Pulse Animation for Recording */
+@keyframes recording-pulse {
+    0%, 100% {
+        opacity: 1;
+        box-shadow: 0 4px 15px rgba(255, 107, 107, 0.4);
+    }
+    50% {
+        opacity: 0.85;
+        box-shadow: 0 4px 25px rgba(255, 107, 107, 0.6);
+    }
+}
+
+/* Recording Badge in Transcription */
+.recording-badge {
+    display: inline-block;
+    margin-left: 10px;
+    padding: 4px 10px;
+    background-color: rgba(255, 107, 107, 0.2);
+    border-radius: 12px;
+    font-size: 0.75rem;
+    color: #ff6b6b;
+    font-weight: 600;
+}
+
+/* Notification Styles (if not already present) */
+.notification {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    padding: 15px 25px;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    z-index: 10000;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-weight: 500;
+    animation: slideInNotification 0.3s ease-out;
+    max-width: 400px;
+    word-wrap: break-word;
+}
+
+.notification-success {
+    background: #10b981;
+    color: white;
+}
+
+.notification-error {
+    background: #ef4444;
+    color: white;
+}
+
+.notification-info {
+    background: #3b82f6;
+    color: white;
+}
+
+@keyframes slideInNotification {
+    from {
+        transform: translateX(400px);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes slideOutNotification {
+    from {
+        transform: translateX(0);
+        opacity: 1;
+    }
+    to {
+        transform: translateX(400px);
+        opacity: 0;
+    }
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .recording-controls {
+        padding: 10px;
+    }
+    
+    .toggle-btn {
+        padding: 10px 20px;
+        font-size: 0.9rem;
+    }
+    
+    .notification {
+        right: 10px;
+        bottom: 10px;
+        max-width: calc(100vw - 20px);
+        font-size: 0.9rem;
+    }
+}
