@@ -3,7 +3,6 @@ from flask_socketio import SocketIO, emit
 import base64
 import os
 import logging
-import json
 from dotenv import load_dotenv
 from datetime import datetime
 import shutil
@@ -48,7 +47,6 @@ elevenlabs_client = ElevenLabs(api_key=ELEVENLABS_API_KEY)
 LLM_PROVIDER = os.getenv('LLM_PROVIDER', 'cohere').lower()  # Default to cohere
 OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
 COHERE_API_KEY = os.getenv('COHERE_API_KEY')
-GROQ_API_KEY = os.getenv('GROQ_API_KEY')
 
 # Validate configuration
 if LLM_PROVIDER == 'openrouter' and not OPENROUTER_API_KEY:
@@ -218,18 +216,10 @@ def handle_audio_data(data):
             LLM_PROVIDER,
             openrouter_key=OPENROUTER_API_KEY,
             cohere_key=COHERE_API_KEY,
-            groq_key=GROQ_API_KEY,
             system_message=system_prompt
         )
         latency_info['llm_response'] = (time.time() - llm_start) * 1000
         logger.info(f"LLM response received ({latency_info['llm_response']:.2f}ms)")
-
-        # 1. 提取信息
-        #current_data = booking_session.get_booking_data() or {}
-        #new_json = extract_booking_info(transcription, current_data, GROQ_API_KEY)
-
-        # 2. 调用 set_booking_data 更新 session 状态
-        #booking_session.set_booking_data(new_json)
 
         # Add this conversation turn to history
         booking_session.add_to_history(transcription, llm_response)
@@ -241,19 +231,6 @@ def handle_audio_data(data):
         # Calculate backend latency (excludes frontend TTS)
         backend_latency = (time.time() - start_time) * 1000
         logger.info(f"Total backend latency: {backend_latency:.2f}ms (conversion: {latency_info['audio_conversion']:.2f}ms + VAD: {latency_info['vad_validation']:.2f}ms + trim: {latency_info['silence_trimming']:.2f}ms + ASR: {latency_info['asr_transcription']:.2f}ms + LLM: {latency_info['llm_response']:.2f}ms + overhead: {backend_latency - sum(latency_info.values()):.2f}ms)")
-
-        structured_data = {
-            'total': round(backend_latency, 2),
-            'conversion': round(latency_info['audio_conversion'], 2),
-            'vad': round(latency_info['vad_validation'], 2),
-            'trim': round(latency_info['silence_trimming'], 2),
-            'asr': round(latency_info['asr_transcription'], 2),
-            'llm': round(latency_info['llm_response'], 2),
-            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        }
-        # 使用 'a' 模式追加写入，一行一个 JSON
-        with open("stats.jsonl", "a", encoding="utf-8") as f:
-            f.write(json.dumps(structured_data) + "\n")
 
         # Save metadata if recording mode is enabled
         avg_latency = None
