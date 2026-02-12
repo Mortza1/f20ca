@@ -13,7 +13,7 @@ feat: optimize LLM selection and migrate to browser-native TTS
 - Implemented local browser speech synthesis for voice output.
 
 
-# LLM Provider: "openrouter" or "cohere" or "groq"
+# LLM Provider: "openrouter" or "cohere" or "groq" 
 LLM_PROVIDER=cohere
 
 # OpenRouter API Key
