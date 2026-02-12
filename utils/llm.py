@@ -6,9 +6,53 @@ import logging
 import requests
 import json
 import cohere
+from groq import Groq
 
 logger = logging.getLogger(__name__)
 
+def get_llm_response_groq(user_message, api_key, system_message=None):
+    """Get response from Cohere API"""
+    try:
+        client = Groq(api_key=api_key)
+
+        if system_message is None:
+            system_message = "You are a helpful garage booking assistant. Help users book garage appointments, check availability, and answer questions about garage services. Be concise and friendly."
+
+        stream = client.chat.completions.create(
+            messages=[
+                # Set an optional system message. This sets the behavior of the
+                # assistant and can be used to provide specific instructions for
+                # how it should behave throughout the conversation.
+                {
+                    "role": "system",
+                    "content": system_message
+                },
+                # Set a user message for the assistant to respond to.
+                {
+                    "role": "user",
+                    "content": user_message,
+                }
+            ],
+
+            # The language model which will generate the completion.
+            model="llama-3.1-8b-instant",
+            max_completion_tokens=200,
+            stream=False,
+        )
+        """
+        full_response = ""
+
+        for chunk in stream:
+            content = chunk.choices[0].delta.content
+            if content:
+                full_response += content
+
+        return full_response
+        """
+        return stream.choices[0].message.content
+    except Exception as e:
+        logger.error(f"Groq Error: {e}")
+        raise
 
 def get_llm_response_openrouter(user_message, api_key):
     """Get response from OpenRouter API"""
@@ -52,7 +96,7 @@ def get_llm_response_openrouter(user_message, api_key):
 
 
 def get_llm_response_cohere(user_message, api_key, system_message=None):
-    """ Get response from Cohere API"""
+    """Get response from Cohere API"""
     try:
         co = cohere.ClientV2(api_key)
 
@@ -82,7 +126,7 @@ def build_booking_system_prompt(booking_state):
     """
     conversation_history = booking_state.get_conversation_history()
 
-    system_prompt = f"""You are a garage booking assistant. Your job is to collect booking information efficiently.
+    system_prompt = f"""You are a garage booking assistant. Your job is to collect booking information efficiently.Your ONLY job is to collect specific information.
 
 INFORMATION NEEDED (in order):
 1. Full name
@@ -95,19 +139,20 @@ INFORMATION NEEDED (in order):
 CONVERSATION SO FAR:
 {conversation_history}
 
-RULES:
-- Be concise - max 2 short sentences
-- Ask for ONE missing piece of information at a time
-- Follow the order above
-- Never repeat questions - check the conversation history
-- Don't ask for date/time until all 6 pieces above are collected
-- Once you have all 6, say you'll check available dates
-- Don't be chatty - stay focused on the task"""
+STRICT RESPONSE RULES:
+1. MAX LENGTH: 20 words. 
+2. NO PLEASANTRIES: Do not say "Got it", "Thank you", "I understand", or "You mentioned...".
+3. NO SUMMARIES: DO NOT repeat what the user just said.
+4. ONE TASK: Just ask the single next missing question directly.
+
+GOOD EXAMPLE: "Is your car currently under any warranty?"
+BAD EXAMPLE: "Got it, you need an oil change. Now, do you have a warranty?"
+"""
 
     return system_prompt
 
 
-def get_llm_response(user_message, provider, openrouter_key=None, cohere_key=None, system_message=None):
+def get_llm_response(user_message, provider, openrouter_key=None, cohere_key=None,groq_key=None, system_message=None):
     """Get response from configured LLM provider"""
     try:
         logger.info(f"Sending to {provider.upper()}: {user_message}")
@@ -116,6 +161,8 @@ def get_llm_response(user_message, provider, openrouter_key=None, cohere_key=Non
             llm_response = get_llm_response_openrouter(user_message, openrouter_key)
         elif provider == 'cohere':
             llm_response = get_llm_response_cohere(user_message, cohere_key, system_message=system_message)
+        elif provider == 'groq':
+            llm_response = get_llm_response_groq(user_message, groq_key, system_message=system_message)
         else:
             raise ValueError(f"Unknown LLM provider: {provider}")
 
