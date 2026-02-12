@@ -265,7 +265,7 @@ def handle_audio_data(data):
     except Exception as e:
         logger.error(f"Error processing audio: {e}")
         emit('error', {'message': f'Transcription failed: {str(e)}'})
-
+ 
 if __name__ == '__main__':
     logger.info("Starting Garage Booking Assistant server...")
     logger.info("=" * 60)
