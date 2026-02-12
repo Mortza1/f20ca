@@ -19,7 +19,7 @@ from utils.booking_state import get_or_create_session
 from utils.calendar import initialize_calendar
 from utils.vad import initialize_vad, validate_speech, trim_silence
 
-# Load environment variables
+# Load environment variables 
 load_dotenv()
 
 # Configure logging
