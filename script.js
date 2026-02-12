@@ -11,7 +11,7 @@ document.addEventListener('DOMContentLoaded', function() {
         },
         height: 'auto',
         events: [
-            // Sample events - these will be populated by the backend later
+            // Sample events - these will be populated by the backend later 
             {
                 title: 'Garage Booking',
                 start: '2026-01-25T10:00:00',
