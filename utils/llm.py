@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 '''
 def extract_booking_info(user_text, current_data, api_key):
     """
-    提取信息并返回更新后的 JSON 字典
+    提取信息并返回更新后的 JSON 字典 
     """
     try:
         client = Groq(api_key=api_key)
