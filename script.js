@@ -357,25 +357,32 @@ document.addEventListener('DOMContentLoaded', function() {
         }, 500);
 
         // Generate and play TTS using ElevenLabs via Puter.js
-        // 使用浏览器原生 TTS 替代 Puter
-        console.log('Generating Browser Native TTS...');
+        console.log('Generating ElevenLabs TTS...');
+
+        // Keep processing state while generating and playing audio
         updateState('processing');
 
-        const utterance = new SpeechSynthesisUtterance(data.bot_text);
-        utterance.lang = 'en-US'; 
-        utterance.rate = 1.0; 
+        puter.ai.txt2speech(data.bot_text, {
+            provider: "elevenlabs",
+            voice: "21m00Tcm4TlvDq8ikWAM", // Rachel voice
+            model: "eleven_flash_v2_5" // Fast generation model
+        })
+        .then(audio => {
+            console.log('ElevenLabs audio ready, playing...');
 
-        utterance.onend = () => {
+            // Play the audio
+            audio.play();
+
+            // Return to idle when audio finishes
+            audio.onended = () => {
+                updateState('idle');
+                console.log('ElevenLabs TTS playback finished');
+            };
+        })
+        .catch(error => {
+            console.error('Error generating/playing ElevenLabs TTS:', error);
             updateState('idle');
-            console.log('Browser TTS playback finished');
-        };
-
-        utterance.onerror = (error) => {
-            console.error('TTS Error:', error);
-            updateState('idle');
-        };
-
-        window.speechSynthesis.speak(utterance);
+        });
     });
 
     socket.on('error', function(data) {
