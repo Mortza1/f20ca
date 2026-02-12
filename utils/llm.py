@@ -52,7 +52,7 @@ def get_llm_response_openrouter(user_message, api_key):
 
 
 def get_llm_response_cohere(user_message, api_key, system_message=None):
-    """Get response from Cohere API"""
+    """ Get response from Cohere API"""
     try:
         co = cohere.ClientV2(api_key)
 
