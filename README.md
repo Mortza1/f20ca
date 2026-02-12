@@ -4,7 +4,7 @@ website on localhost:5001
 create a .env file, and enter the following 
 
 
-# LLM Provider: "openrouter" or "cohere"
+# LLM Provider: "openrouter" or "cohere" 
 LLM_PROVIDER=cohere
 
 # OpenRouter API Key
