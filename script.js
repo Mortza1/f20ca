@@ -31,7 +31,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     calendar.render();
 
-    // Initialize Lottie Animation
+    // Initialize Lottie Animation 
     const animation = lottie.loadAnimation({
         container: document.getElementById('lottie-animation'),
         renderer: 'svg',
