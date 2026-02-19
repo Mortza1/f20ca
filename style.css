@@ -186,184 +186,6 @@ body {
 /* Recording Controls */
 .recording-controls {
     display: flex;
-    align-items: center;
-    gap: 15px;
-    margin-bottom: 30px;
-}
-
-.toggle-btn {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 12px 24px;
-    background-color: rgba(255, 255, 255, 0.05);
-    border: 2px solid rgba(255, 142, 58, 0.3);
-    border-radius: 25px;
-    color: #ffffff;
-    font-size: 1rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-}
-
-.toggle-btn:hover {
-    background-color: rgba(255, 142, 58, 0.1);
-    border-color: #ff8e3a;
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(255, 142, 58, 0.2);
-}
-
-.toggle-btn:active {
-    transform: translateY(0);
-}
-
-.toggle-btn.active {
-    background-color: rgba(255, 142, 58, 0.2);
-    border-color: #ff8e3a;
-    box-shadow: 0 0 20px rgba(255, 142, 58, 0.3);
-}
-
-.toggle-icon {
-    font-size: 1.2rem;
-    transition: all 0.3s ease;
-}
-
-.toggle-btn.active .toggle-icon {
-    animation: pulse 2s infinite;
-}
-
-@keyframes pulse {
-    0%, 100% {
-        transform: scale(1);
-        opacity: 1;
-    }
-    50% {
-        transform: scale(1.2);
-        opacity: 0.8;
-    }
-}
-
-.recording-status {
-    font-size: 0.9rem;
-    color: #ff8e3a;
-    font-weight: 500;
-    opacity: 0;
-    transition: opacity 0.3s ease;
-}
-
-.recording-status.active {
-    opacity: 1;
-}
-
-#lottie-container {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: transform 0.3s ease;
-}
-
-#lottie-animation {
-    width: 400px;
-    height: 400px;
-    transition: all 0.3s ease;
-}
-
-/* State-based blob sizing */
-#lottie-container.idle {
-    transform: scale(0.85);
-    opacity: 0.6;
-}
-
-#lottie-container.recording {
-    transform: scale(1.15);
-    opacity: 1;
-}
-
-#lottie-container.processing {
-    transform: scale(1.05);
-    opacity: 0.9;
-}
-
-/* Transcription Display */
-#transcription-display {
-    margin-top: 40px;
-    padding: 20px 30px;
-    background-color: rgba(255, 142, 58, 0.1);
-    border: 1px solid rgba(255, 142, 58, 0.3);
-    border-radius: 12px;
-    min-height: 100px;
-    max-width: 700px;
-    color: #ffffff;
-    font-size: 1rem;
-    font-weight: 300;
-    line-height: 1.8;
-    text-align: left;
-    transition: all 0.3s ease;
-}
-
-#transcription-display:empty {
-    display: none;
-}
-
-#transcription-display.updating {
-    border-color: #ff8e3a;
-    background-color: rgba(255, 142, 58, 0.15);
-}
-
-/* Responsive Design */
-@media (max-width: 1024px) {
-    .header {
-        padding: 20px 15px 15px;
-    }
-
-    .main-title {
-        font-size: 1.8rem;
-    }
-
-    .subtitle {
-        font-size: 0.85rem;
-    }
-
-    .container {
-        flex-direction: column;
-    }
-
-    .calendar-section {
-        flex: none;
-        border-right: none;
-        border-bottom: 1px solid rgba(255, 142, 58, 0.2);
-        padding: 20px;
-    }
-
-    .animation-section {
-        flex: none;
-        padding: 20px;
-    }
-
-    #lottie-animation {
-        width: 250px;
-        height: 250px;
-    }
-
-    #lottie-container {
-        margin-top: 20px;
-    }
-
-    .section-title {
-        font-size: 1rem;
-        margin-bottom: 15px;
-    }
-}
-
-/* ============================================================
-   RECORDING BUTTON IMPROVEMENTS
-   Add these styles to your existing style.css
-   ============================================================ */
-
-/* Recording Controls Container */
-.recording-controls {
-    display: flex;
     flex-direction: column;
     align-items: center;
     gap: 10px;
@@ -373,7 +195,6 @@ body {
     border-radius: 12px;
 }
 
-/* Recording Toggle Button */
 .toggle-btn {
     display: flex;
     align-items: center;
@@ -444,19 +265,234 @@ body {
     }
 }
 
-/* Recording Badge in Transcription */
-.recording-badge {
+#lottie-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.3s ease;
+}
+
+#lottie-animation {
+    width: 400px;
+    height: 400px;
+    transition: all 0.3s ease;
+}
+
+/* State-based blob sizing */
+#lottie-container.idle {
+    transform: scale(0.85);
+    opacity: 0.6;
+}
+
+#lottie-container.recording {
+    transform: scale(1.15);
+    opacity: 1;
+}
+
+#lottie-container.processing {
+    transform: scale(1.05);
+    opacity: 0.9;
+}
+
+/* Transcription Display */
+#transcription-display {
+    margin-top: 40px;
+    padding: 20px 30px;
+    background-color: rgba(255, 142, 58, 0.1);
+    border: 1px solid rgba(255, 142, 58, 0.3);
+    border-radius: 12px;
+    min-height: 100px;
+    max-width: 700px;
+    color: #ffffff;
+    font-size: 1rem;
+    font-weight: 300;
+    line-height: 1.8;
+    text-align: left;
+    transition: all 0.3s ease;
+}
+
+#transcription-display:empty {
+    display: none;
+}
+
+#transcription-display.updating {
+    border-color: #ff8e3a;
+    background-color: rgba(255, 142, 58, 0.15);
+    animation: updatePulse 0.5s ease;
+}
+
+@keyframes updatePulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.02); }
+}
+
+
+/* ============================================================================
+   🆕 HYBRID SYSTEM STYLES - BOOKING PROGRESS & PERFORMANCE
+   ============================================================================ */
+
+/* Booking Progress Container */
+.booking-progress {
+    margin-top: 20px;
+    padding: 20px;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 12px;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 142, 58, 0.15);
+}
+
+.booking-progress h3 {
+    color: rgba(255, 255, 255, 0.9);
+    margin: 0 0 15px 0;
+    font-size: 1rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    letter-spacing: 0.5px;
+}
+
+/* Individual Progress Field */
+.progress-field {
+    display: flex;
+    align-items: center;
+    margin: 8px 0;
+    padding: 8px 12px;
+    border-radius: 8px;
+    transition: all 0.3s ease;
+    font-size: 0.9rem;
+}
+
+.progress-field.complete {
+    background: rgba(0, 255, 0, 0.1);
+    color: #00ff00;
+}
+
+.progress-field.pending {
+    background: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.4);
+}
+
+.progress-field.updated {
+    animation: highlightUpdate 0.6s ease;
+}
+
+@keyframes highlightUpdate {
+    0%, 100% { background: rgba(255, 142, 58, 0.1); }
+    50% { background: rgba(255, 142, 58, 0.3); }
+}
+
+.progress-icon {
+    width: 20px;
+    text-align: center;
+    margin-right: 10px;
+    font-size: 1.1rem;
+}
+
+.progress-label {
+    flex: 1;
+    font-weight: 500;
+}
+
+.progress-value {
+    color: rgba(255, 255, 255, 0.8);
+    font-weight: 400;
+}
+
+/* Response Mode Badges */
+.response-mode-badge {
     display: inline-block;
     margin-left: 10px;
     padding: 4px 10px;
-    background-color: rgba(255, 107, 107, 0.2);
     border-radius: 12px;
     font-size: 0.75rem;
-    color: #ff6b6b;
     font-weight: 600;
 }
 
-/* Notification Styles (if not already present) */
+.badge-parser {
+    background: rgba(0, 255, 0, 0.2);
+    color: #00ff00;
+}
+
+.badge-llm {
+    background: rgba(255, 255, 0, 0.2);
+    color: #ffff00;
+}
+
+.badge-recording {
+    background: rgba(255, 142, 58, 0.2);
+    color: #ff8e3a;
+}
+
+/* Latency Breakdown Display */
+.latency-breakdown {
+    margin-top: 15px;
+    padding: 12px;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 8px;
+    font-size: 0.85rem;
+}
+
+.latency-breakdown h4 {
+    color: rgba(255, 255, 255, 0.5);
+    margin: 0 0 8px 0;
+    font-size: 0.8rem;
+    font-weight: 500;
+}
+
+.latency-row {
+    display: flex;
+    justify-content: space-between;
+    margin: 4px 0;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.latency-value {
+    color: #ff8e3a;
+    font-weight: 600;
+}
+
+.latency-fast {
+    color: #00ff00;
+}
+
+/* Completion Indicator */
+.completion-indicator {
+    margin-top: 15px;
+    padding: 12px;
+    background: linear-gradient(135deg, rgba(0, 255, 0, 0.1), rgba(0, 200, 0, 0.1));
+    border: 1px solid rgba(0, 255, 0, 0.3);
+    border-radius: 8px;
+    color: #00ff00;
+    text-align: center;
+    font-weight: 600;
+    display: none;
+}
+
+.completion-indicator.show {
+    display: block;
+    animation: fadeIn 0.5s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Streaming Indicator */
+.streaming-indicator {
+    display: inline-block;
+    margin-left: 8px;
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 1; }
+}
+
+
+/* Notification Styles */
 .notification {
     position: fixed;
     bottom: 20px;
@@ -509,7 +545,65 @@ body {
     }
 }
 
-/* Responsive adjustments */
+
+/* Responsive Design */
+@media (max-width: 1024px) {
+    .header {
+        padding: 20px 15px 15px;
+    }
+
+    .main-title {
+        font-size: 1.8rem;
+    }
+
+    .subtitle {
+        font-size: 0.85rem;
+    }
+
+    .container {
+        flex-direction: column;
+    }
+
+    .calendar-section {
+        flex: none;
+        border-right: none;
+        border-bottom: 1px solid rgba(255, 142, 58, 0.2);
+        padding: 20px;
+    }
+
+    .animation-section {
+        flex: none;
+        padding: 20px;
+    }
+
+    #lottie-animation {
+        width: 250px;
+        height: 250px;
+    }
+
+    #lottie-container {
+        margin-top: 20px;
+    }
+
+    .section-title {
+        font-size: 1rem;
+        margin-bottom: 15px;
+    }
+
+    .booking-progress {
+        padding: 15px;
+    }
+
+    .booking-progress h3 {
+        font-size: 0.9rem;
+    }
+
+    .progress-field {
+        font-size: 0.85rem;
+        padding: 6px 10px;
+    }
+}
+
 @media (max-width: 768px) {
     .recording-controls {
         padding: 10px;
@@ -525,5 +619,15 @@ body {
         bottom: 10px;
         max-width: calc(100vw - 20px);
         font-size: 0.9rem;
+    }
+
+    .booking-progress {
+        margin-top: 15px;
+        padding: 12px;
+    }
+
+    .latency-breakdown {
+        padding: 10px;
+        font-size: 0.8rem;
     }
 }

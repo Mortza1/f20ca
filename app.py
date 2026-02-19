@@ -10,6 +10,7 @@ from elevenlabs.client import ElevenLabs
 from io import BytesIO
 
 # Import utilities
+from utils.hybrid_handler import HybridBookingHandler
 from utils.llm import get_llm_response, build_booking_system_prompt, stream_llm_response
 from utils.audio import convert_webm_to_wav_bytes
 from utils.recording import (
@@ -85,6 +86,8 @@ latency_records = []
 # Track active recording sessions per socket
 # Format: {socket_id: recording_session_id}
 socket_recording_map = {}
+
+session_handlers = {}
 
 
 @app.route('/')
@@ -199,178 +202,366 @@ def handle_bot_audio(data):
         logger.error(f"Error handling bot audio: {e}")
 
 
+# @socketio.on('audio_data')
+# def handle_audio_data(data):
+#     """
+#     Handle incoming audio data from frontend.
+    
+#     OPTIMIZED PIPELINE with session-based recording:
+#     1. Convert WebM → WAV in memory (~60-120ms)
+#     2. Run VAD on tensor directly (~50-120ms)
+#     3. Send to ElevenLabs STT API
+#     4. Get LLM response
+#     5. If recording: save user audio + metadata
+#     6. Return text (frontend handles TTS and sends audio back)
+#     """
+#     try:
+#         # Start total timing
+#         start_time = time.time()
+#         latency_info = {}
+
+#         logger.info("Received audio data")
+
+#         # Check if this socket has an active recording session
+#         is_recording = request.sid in socket_recording_map
+#         session_id = socket_recording_map.get(request.sid) if is_recording else None
+
+#         # Decode base64 audio
+#         audio_base64 = data.get('audio')
+
+#         if not audio_base64:
+#             emit('error', {'message': 'No audio data received'})
+#             return
+
+#         audio_bytes = base64.b64decode(audio_base64)
+#         logger.info(f"Decoded audio: {len(audio_bytes)} bytes")
+
+#     #    conversion from webm to wav in memory
+#         conversion_start = time.time()
+#         wav_bytes = convert_webm_to_wav_bytes(audio_bytes)
+#         latency_info['audio_conversion'] = (time.time() - conversion_start) * 1000
+#         logger.info(f"Converted to WAV in-memory: {len(wav_bytes)} bytes ({latency_info['audio_conversion']:.2f}ms)")
+
+#         # running vad on the wav bytes directly
+#         vad_start = time.time()
+#         has_speech, speech_duration = validate_speech_bytes(wav_bytes, min_speech_duration_ms=250)
+#         latency_info['vad_validation'] = (time.time() - vad_start) * 1000
+#         logger.info(f"VAD validation: {has_speech} ({latency_info['vad_validation']:.2f}ms)")
+
+#         if not has_speech:
+#             logger.warning("No speech detected by VAD, rejecting audio")
+#             emit('error', {'message': 'No speech detected. Please try again.'})
+#             return
+
+#         latency_info['silence_trimming'] = 0  # No trimming in in-memory path
+
+#         # Transcribe with ElevenLabs
+#         logger.info("Transcribing audio with ElevenLabs...")
+#         asr_start = time.time()
+
+#         audio_data_stt = BytesIO(wav_bytes)
+
+#         transcription_result = elevenlabs_client.speech_to_text.convert(
+#             file=audio_data_stt,
+#             model_id="scribe_v2",
+#             language_code="eng"
+#         )
+
+#         transcription = transcription_result.text
+#         latency_info['asr_transcription'] = (time.time() - asr_start) * 1000
+#         logger.info(f"Transcription: {transcription} ({latency_info['asr_transcription']:.2f}ms)")
+
+#         # Handle empty transcription
+#         if not transcription or transcription.strip() == "":
+#             logger.warning("Empty transcription received, skipping LLM call")
+#             emit('error', {'message': 'Could not understand audio. Please try again.'})
+#             return
+
+#         # Get or create booking session
+#         session_id_booking = request.sid
+#         booking_session = get_or_create_session(session_id_booking)
+
+#         # Build system prompt
+#         system_prompt = build_booking_system_prompt(booking_session)
+
+#         # Get LLM response
+#         # llm_start = time.time()
+#         # llm_response = get_llm_response(
+#         #     transcription,
+#         #     LLM_PROVIDER,
+#         #     openrouter_key=OPENROUTER_API_KEY,
+#         #     cohere_key=COHERE_API_KEY,
+#         #     system_message=system_prompt
+#         # )
+#         # latency_info['llm_response'] = (time.time() - llm_start) * 1000
+#         # logger.info(f"LLM response received ({latency_info['llm_response']:.2f}ms)")
+
+#         logger.info("🧠 Streaming LLM response...")
+
+#         llm_start = time.time()
+#         full_response = ""
+
+#         # notify frontend that streaming starts
+#         emit('bot_stream_start', {})
+
+#         for token in stream_llm_response(
+#             transcription,
+#             LLM_PROVIDER,
+#             openrouter_key=OPENROUTER_API_KEY,
+#             cohere_key=COHERE_API_KEY,
+#             system_message=system_prompt
+#         ):
+#             full_response += token
+
+#             # send token to frontend in real-time
+#             emit('bot_token', {'token': token})
+
+#         latency_info['llm_response'] = (time.time() - llm_start) * 1000
+#         llm_response = full_response
+
+#         logger.info(f"LLM streaming completed ({latency_info['llm_response']:.2f}ms)")
+
+#         # notify frontend that streaming ends
+#         emit('bot_stream_end', {})
+
+
+#         # Add to history
+#         booking_session.add_to_history(transcription, llm_response)
+
+#         # TTS handled by frontend
+#         latency_info['tts_generation'] = 0
+
+#         # Calculate backend latency
+#         backend_latency = (time.time() - start_time) * 1000
+#         overhead = backend_latency - sum(latency_info.values())
+        
+#         logger.info(f"✨ Total backend latency: {backend_latency:.2f}ms")
+#         logger.info(f"   → Conversion: {latency_info['audio_conversion']:.2f}ms")
+#         logger.info(f"   → VAD: {latency_info['vad_validation']:.2f}ms")
+#         logger.info(f"   → ASR: {latency_info['asr_transcription']:.2f}ms")
+#         logger.info(f"   → LLM: {latency_info['llm_response']:.2f}ms")
+#         logger.info(f"   → Overhead: {overhead:.2f}ms")
+
+#         # If recording, save user audio and metadata
+#         if is_recording and session_id:
+#             # Add user audio to recording
+#             add_user_audio_to_session(session_id, wav_bytes)
+            
+#             # Add metadata to recording
+#             add_metadata_to_session(session_id, transcription, llm_response, latency_info)
+            
+#             logger.info(f"🎙️ Added turn to recording {session_id}")
+
+#         # Calculate average latency for response
+#         latency_records.append(backend_latency)
+#         avg_latency = sum(latency_records) / len(latency_records)
+
+#         # Send response to frontend
+#         emit('bot_response', {
+#             'user_text': transcription,
+#             'bot_text': llm_response,
+#             'success': True,
+#             'is_recording': is_recording,
+#             'session_id': session_id if is_recording else None,
+#             'latency_ms': {
+#                 'backend': round(backend_latency, 2),
+#                 'average': round(avg_latency, 2)
+#             }
+#         })
+
+#     except Exception as e:
+#         logger.error(f"Error processing audio: {e}")
+#         import traceback
+#         traceback.print_exc()
+#         emit('error', {'message': f'Processing failed: {str(e)}'})
+
 @socketio.on('audio_data')
 def handle_audio_data(data):
     """
-    Handle incoming audio data from frontend.
-    
-    OPTIMIZED PIPELINE with session-based recording:
-    1. Convert WebM → WAV in memory (~60-120ms)
-    2. Run VAD on tensor directly (~50-120ms)
-    3. Send to ElevenLabs STT API
-    4. Get LLM response
-    5. If recording: save user audio + metadata
-    6. Return text (frontend handles TTS and sends audio back)
+    Modified handler with hybrid system
     """
     try:
-        # Start total timing
         start_time = time.time()
         latency_info = {}
-
+        
         logger.info("Received audio data")
-
-        # Check if this socket has an active recording session
+        
+        # Check recording session
         is_recording = request.sid in socket_recording_map
         session_id = socket_recording_map.get(request.sid) if is_recording else None
-
-        # Decode base64 audio
+        
+        # Decode audio
         audio_base64 = data.get('audio')
-
         if not audio_base64:
             emit('error', {'message': 'No audio data received'})
             return
-
+        
         audio_bytes = base64.b64decode(audio_base64)
-        logger.info(f"Decoded audio: {len(audio_bytes)} bytes")
-
-    #    conversion from webm to wav in memory
+        
+        # Convert WebM → WAV
         conversion_start = time.time()
         wav_bytes = convert_webm_to_wav_bytes(audio_bytes)
         latency_info['audio_conversion'] = (time.time() - conversion_start) * 1000
-        logger.info(f"Converted to WAV in-memory: {len(wav_bytes)} bytes ({latency_info['audio_conversion']:.2f}ms)")
-
-        # running vad on the wav bytes directly
+        
+        # VAD validation
         vad_start = time.time()
         has_speech, speech_duration = validate_speech_bytes(wav_bytes, min_speech_duration_ms=250)
         latency_info['vad_validation'] = (time.time() - vad_start) * 1000
-        logger.info(f"VAD validation: {has_speech} ({latency_info['vad_validation']:.2f}ms)")
-
+        
         if not has_speech:
-            logger.warning("No speech detected by VAD, rejecting audio")
+            logger.warning("No speech detected")
             emit('error', {'message': 'No speech detected. Please try again.'})
             return
-
-        latency_info['silence_trimming'] = 0  # No trimming in in-memory path
-
-        # Transcribe with ElevenLabs
-        logger.info("Transcribing audio with ElevenLabs...")
+        
+        # Transcribe
         asr_start = time.time()
-
         audio_data_stt = BytesIO(wav_bytes)
-
         transcription_result = elevenlabs_client.speech_to_text.convert(
             file=audio_data_stt,
             model_id="scribe_v2",
             language_code="eng"
         )
-
         transcription = transcription_result.text
         latency_info['asr_transcription'] = (time.time() - asr_start) * 1000
-        logger.info(f"Transcription: {transcription} ({latency_info['asr_transcription']:.2f}ms)")
-
-        # Handle empty transcription
+        
         if not transcription or transcription.strip() == "":
-            logger.warning("Empty transcription received, skipping LLM call")
-            emit('error', {'message': 'Could not understand audio. Please try again.'})
+            emit('error', {'message': 'Could not understand audio.'})
             return
-
-        # Get or create booking session
-        session_id_booking = request.sid
-        booking_session = get_or_create_session(session_id_booking)
-
-        # Build system prompt
-        system_prompt = build_booking_system_prompt(booking_session)
-
-        # Get LLM response
-        # llm_start = time.time()
-        # llm_response = get_llm_response(
-        #     transcription,
-        #     LLM_PROVIDER,
-        #     openrouter_key=OPENROUTER_API_KEY,
-        #     cohere_key=COHERE_API_KEY,
-        #     system_message=system_prompt
-        # )
-        # latency_info['llm_response'] = (time.time() - llm_start) * 1000
-        # logger.info(f"LLM response received ({latency_info['llm_response']:.2f}ms)")
-
-        logger.info("🧠 Streaming LLM response...")
-
+        
+        # ===================================================================
+        # 🆕 HYBRID SYSTEM STARTS HERE
+        # ===================================================================
+        
+        # Get or create handler for this session
+        socket_id = request.sid
+        if socket_id not in session_handlers:
+            session_handlers[socket_id] = HybridBookingHandler(socket_id)
+        
+        handler = session_handlers[socket_id]
+        
+        # Create wrapper for your existing LLM function
+        def llm_wrapper(user_message, system_message, max_tokens=500):
+            """Wrapper around your existing Cohere LLM"""
+            # Use your existing get_llm_response or call Cohere directly
+            result = get_llm_response(
+                user_message,
+                LLM_PROVIDER,
+                openrouter_key=OPENROUTER_API_KEY,
+                cohere_key=COHERE_API_KEY,
+                system_message=system_message
+            )
+            return result
+        
+        # Process with hybrid handler
         llm_start = time.time()
-        full_response = ""
-
-        # notify frontend that streaming starts
-        emit('bot_stream_start', {})
-
-        for token in stream_llm_response(
+        
+        # Check if we're using streaming fallback
+        handler_response = handler.process_user_message(
             transcription,
-            LLM_PROVIDER,
-            openrouter_key=OPENROUTER_API_KEY,
-            cohere_key=COHERE_API_KEY,
-            system_message=system_prompt
-        ):
-            full_response += token
+            llm_call_function=llm_wrapper
+        )
+        
+        # If response mode is parser or greeting (fast deterministic path)
+        if handler_response['mode'] in ('parser', 'greeting'):
+            logger.info(f"⚡ FAST PATH ({handler_response['mode'].upper()}): Using pre-recorded response")
+            llm_response = handler_response['bot_response']
+            latency_info['llm_response'] = handler_response['latency_breakdown'].get('parser',
+                                           handler_response['latency_breakdown'].get('greeting', 0))
 
-            # send token to frontend in real-time
-            emit('bot_token', {'token': token})
+            # Frontend should play pre-recorded audio
+            use_prerecorded = True
+            audio_filename = handler_response['audio_filename']
 
-        latency_info['llm_response'] = (time.time() - llm_start) * 1000
-        llm_response = full_response
-
-        logger.info(f"LLM streaming completed ({latency_info['llm_response']:.2f}ms)")
-
-        # notify frontend that streaming ends
-        emit('bot_stream_end', {})
-
-
-        # Add to history
-        booking_session.add_to_history(transcription, llm_response)
-
-        # TTS handled by frontend
-        latency_info['tts_generation'] = 0
-
-        # Calculate backend latency
+        # If response mode is fallback LLM (conversational path)
+        else:
+            logger.info("🔄 SLOW PATH: Using LLM generation")
+            
+            # Option A: Use streaming (recommended)
+            emit('bot_stream_start', {})
+            
+            full_response = ""
+            for token in stream_llm_response(
+                transcription,
+                LLM_PROVIDER,
+                openrouter_key=OPENROUTER_API_KEY,
+                cohere_key=COHERE_API_KEY,
+                system_message=handler_response.get('system_prompt') or 
+                               build_fallback_prompt_from_handler(handler)
+            ):
+                full_response += token
+                emit('bot_token', {'token': token})
+            
+            llm_response = full_response
+            latency_info['llm_response'] = (time.time() - llm_start) * 1000
+            
+            emit('bot_stream_end', {})
+            
+            use_prerecorded = False
+            audio_filename = None
+        
+        # Add to conversation history if needed
+        # (handler already tracks this internally)
+        
+        # Recording logic (unchanged)
+        if is_recording and session_id:
+            add_user_audio_to_session(session_id, wav_bytes)
+            add_metadata_to_session(session_id, transcription, llm_response, latency_info)
+        
+        # Calculate total latency
         backend_latency = (time.time() - start_time) * 1000
         overhead = backend_latency - sum(latency_info.values())
-        
+
         logger.info(f"✨ Total backend latency: {backend_latency:.2f}ms")
-        logger.info(f"   → Conversion: {latency_info['audio_conversion']:.2f}ms")
-        logger.info(f"   → VAD: {latency_info['vad_validation']:.2f}ms")
-        logger.info(f"   → ASR: {latency_info['asr_transcription']:.2f}ms")
-        logger.info(f"   → LLM: {latency_info['llm_response']:.2f}ms")
+        logger.info(f"   → Conversion: {latency_info.get('audio_conversion', 0):.2f}ms")
+        logger.info(f"   → VAD: {latency_info.get('vad_validation', 0):.2f}ms")
+        logger.info(f"   → ASR: {latency_info.get('asr_transcription', 0):.2f}ms")
+        logger.info(f"   → LLM/Parser: {latency_info.get('llm_response', 0):.2f}ms")
+        logger.info(f"   → Mode: {handler_response['mode']}")
         logger.info(f"   → Overhead: {overhead:.2f}ms")
 
-        # If recording, save user audio and metadata
-        if is_recording and session_id:
-            # Add user audio to recording
-            add_user_audio_to_session(session_id, wav_bytes)
-            
-            # Add metadata to recording
-            add_metadata_to_session(session_id, transcription, llm_response, latency_info)
-            
-            logger.info(f"🎙️ Added turn to recording {session_id}")
-
-        # Calculate average latency for response
         latency_records.append(backend_latency)
-        avg_latency = sum(latency_records) / len(latency_records)
 
         # Send response to frontend
         emit('bot_response', {
             'user_text': transcription,
             'bot_text': llm_response,
+            'use_prerecorded': use_prerecorded,
+            'audio_filename': audio_filename,
+            'booking_state': handler_response['state'],
+            'is_complete': handler_response['is_complete'],
+            'updated_fields': handler_response.get('updated_fields', []),
+            'response_mode': handler_response['mode'],
             'success': True,
             'is_recording': is_recording,
             'session_id': session_id if is_recording else None,
             'latency_ms': {
                 'backend': round(backend_latency, 2),
-                'average': round(avg_latency, 2)
+                'breakdown': {k: round(v, 2) for k, v in latency_info.items()}
             }
         })
-
+        
     except Exception as e:
         logger.error(f"Error processing audio: {e}")
         import traceback
         traceback.print_exc()
         emit('error', {'message': f'Processing failed: {str(e)}'})
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    socket_id = request.sid
+    if socket_id in session_handlers:
+        del session_handlers[socket_id]
+        logger.info(f"Cleaned up handler for {socket_id}")
+
+def build_fallback_prompt_from_handler(handler):
+    """Build fallback prompt using handler's current state"""
+    from utils.llm_parser import build_fallback_prompt
+    
+    return build_fallback_prompt(
+        "",  # message already processed
+        handler.dialogue_engine.state.to_dict(),
+        handler.dialogue_engine.state.get_missing_fields()
+    )
 
 
 if __name__ == '__main__':

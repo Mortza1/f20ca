@@ -74,6 +74,16 @@ document.addEventListener('DOMContentLoaded', function() {
     let streamingBotText = "";
     let streamingActive = false;
 
+    // Booking progress field labels
+    const FIELD_LABELS = {
+        name: 'Name',
+        car_reg: 'Registration',
+        car_model: 'Car Model',
+        mileage: 'Mileage',
+        warranty: 'Warranty',
+        issue: 'Issue'
+    };
+
 
     // Recording toggle button handler - NOW CONTROLS SESSION RECORDING
     recordingToggle.addEventListener('click', function() {
@@ -552,3 +562,6 @@ document.addEventListener('DOMContentLoaded', function() {
     // Auto-start continuous listening on page load
     initializeContinuousListening();
 });
+
+
+
