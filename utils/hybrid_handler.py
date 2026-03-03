@@ -93,22 +93,50 @@ class HybridBookingHandler:
             
             if parser_result['success']:
                 # Parser succeeded - use state machine
-                logger.info("✅ Parser succeeded - using deterministic response")
-                
-                # Update state
-                update_meta = self.dialogue_engine.update_state(parser_result['parsed_data'])
-                
-                # Get next response from state machine
+                user_intent = parser_result['parsed_data'].get('user_intent', 'data_only')
+                user_question = parser_result['parsed_data'].get('user_question')
+                logger.info(f"✅ Parser succeeded - intent: {user_intent}")
+
+                # Update state (intent fields are not booking fields, strip them first)
+                booking_data = {k: v for k, v in parser_result['parsed_data'].items()
+                                if k not in ('user_intent', 'user_question')}
+                update_meta = self.dialogue_engine.update_state(booking_data)
+
+                # Get next scripted question from state machine
                 response_meta = self.dialogue_engine.get_next_response(parse_success=True)
-                
-                # Add to history
+
+                if user_intent in ('data_and_question', 'question_only') and user_question:
+                    # Answer the question with LLM, then append scripted question
+                    logger.info(f"❓ Mixed intent — answering: '{user_question}'")
+                    answer_start = time.time()
+                    answer = self._answer_question(user_question, llm_call_function)
+                    latency['answer_question'] = (time.time() - answer_start) * 1000
+
+                    scripted_q = response_meta['text'] or ""
+                    bot_response = f"{answer} {scripted_q}".strip()
+
+                    self.conversation_history.append({"role": "assistant", "content": bot_response})
+                    latency['total'] = (time.time() - start_time) * 1000
+
+                    return {
+                        'bot_response': bot_response,
+                        'use_prerecorded': False,   # mixed response can't use pre-recorded
+                        'audio_filename': None,
+                        'is_complete': self.dialogue_engine.state.is_complete(),
+                        'state': self.dialogue_engine.state.to_dict(),
+                        'updated_fields': update_meta['updated_fields'],
+                        'latency_breakdown': latency,
+                        'mode': 'mixed_intent'
+                    }
+
+                # Pure data — normal fast path
                 self.conversation_history.append({
                     "role": "assistant",
                     "content": response_meta['text']
                 })
-                
+
                 latency['total'] = (time.time() - start_time) * 1000
-                
+
                 return {
                     'bot_response': response_meta['text'],
                     'use_prerecorded': response_meta['use_prerecorded'],
@@ -176,7 +204,8 @@ class HybridBookingHandler:
             llm_response = llm_call_function(
                 user_message=f"{parser_prompt}\n\nUser's message: {user_message}",
                 system_message="You are a JSON extractor. Return only valid JSON, no explanation.",
-                max_tokens=200  # Parser needs very few tokens
+                max_tokens=200,
+                json_mode=True
             )
             
             # Parse JSON response
@@ -205,6 +234,23 @@ class HybridBookingHandler:
             'latency_ms': latency_ms
         }
     
+    def _answer_question(self, question: str, llm_call_function) -> str:
+        """Answer a one-off user question in one short sentence, staying in context."""
+        system = (
+            "You are a garage booking assistant. "
+            "Answer the user's question in one short sentence, then stop. "
+            "Do not ask any follow-up questions."
+        )
+        try:
+            return llm_call_function(
+                user_message=question,
+                system_message=system,
+                max_tokens=80
+            )
+        except Exception as e:
+            logger.error(f"Failed to answer question: {e}")
+            return ""
+
     def _use_fallback_llm(self, user_message: str, llm_call_function,
                          stream_llm_function=None) -> Dict[str, Any]:
         """

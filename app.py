@@ -440,15 +440,15 @@ def handle_audio_data(data):
         handler = session_handlers[socket_id]
         
         # Create wrapper for your existing LLM function
-        def llm_wrapper(user_message, system_message, max_tokens=500):
+        def llm_wrapper(user_message, system_message, max_tokens=500, json_mode=False):
             """Wrapper around your existing Cohere LLM"""
-            # Use your existing get_llm_response or call Cohere directly
             result = get_llm_response(
                 user_message,
                 LLM_PROVIDER,
                 openrouter_key=OPENROUTER_API_KEY,
                 cohere_key=COHERE_API_KEY,
-                system_message=system_message
+                system_message=system_message,
+                json_mode=json_mode
             )
             return result
         
@@ -461,8 +461,8 @@ def handle_audio_data(data):
             llm_call_function=llm_wrapper
         )
         
-        # If response mode is parser or greeting (fast deterministic path)
-        if handler_response['mode'] in ('parser', 'greeting'):
+        # If response mode is parser, greeting, or mixed_intent
+        if handler_response['mode'] in ('parser', 'greeting', 'mixed_intent'):
             logger.info(f"⚡ FAST PATH ({handler_response['mode'].upper()}): Using pre-recorded response")
             llm_response = handler_response['bot_response']
             latency_info['llm_response'] = handler_response['latency_breakdown'].get('parser',
@@ -501,7 +501,18 @@ def handle_audio_data(data):
         
         # Add to conversation history if needed
         # (handler already tracks this internally)
-        
+
+        # Print booking state after every turn
+        state = handler_response['state']
+        print("\n" + "="*50)
+        print("📋 BOOKING STATE")
+        print("="*50)
+        for field, value in state.items():
+            status = "✓" if value is not None else "✗"
+            print(f"  {status} {field:<12} {value}")
+        print(f"  Complete: {handler.dialogue_engine.state.is_complete()}")
+        print("="*50 + "\n")
+
         # Recording logic (unchanged)
         if is_recording and session_id:
             add_user_audio_to_session(session_id, wav_bytes)

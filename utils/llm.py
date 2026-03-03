@@ -51,7 +51,7 @@ def get_llm_response_openrouter(user_message, api_key):
         raise
 
 
-def get_llm_response_cohere(user_message, api_key, system_message=None):
+def get_llm_response_cohere(user_message, api_key, system_message=None, json_mode=False):
     """Get response from Cohere API"""
     try:
         co = cohere.ClientV2(api_key)
@@ -59,7 +59,7 @@ def get_llm_response_cohere(user_message, api_key, system_message=None):
         if system_message is None:
             system_message = "You are a helpful garage booking assistant. Help users book garage appointments, check availability, and answer questions about garage services. Be concise and friendly."
 
-        response = co.chat(
+        kwargs = dict(
             model="command-a-03-2025",
             messages=[
                 {"role": "system", "content": system_message},
@@ -67,6 +67,10 @@ def get_llm_response_cohere(user_message, api_key, system_message=None):
             ],
             max_tokens=500
         )
+        if json_mode:
+            kwargs["response_format"] = {"type": "json_object"}
+
+        response = co.chat(**kwargs)
 
         return response.message.content[0].text
 
@@ -152,7 +156,7 @@ RULES:
     return system_prompt
 
 
-def get_llm_response(user_message, provider, openrouter_key=None, cohere_key=None, system_message=None):
+def get_llm_response(user_message, provider, openrouter_key=None, cohere_key=None, system_message=None, json_mode=False):
     """Get response from configured LLM provider"""
     try:
         logger.info(f"Sending to {provider.upper()}: {user_message}")
@@ -160,7 +164,7 @@ def get_llm_response(user_message, provider, openrouter_key=None, cohere_key=Non
         if provider == 'openrouter':
             llm_response = get_llm_response_openrouter(user_message, openrouter_key)
         elif provider == 'cohere':
-            llm_response = get_llm_response_cohere(user_message, cohere_key, system_message=system_message)
+            llm_response = get_llm_response_cohere(user_message, cohere_key, system_message=system_message, json_mode=json_mode)
         else:
             raise ValueError(f"Unknown LLM provider: {provider}")
 

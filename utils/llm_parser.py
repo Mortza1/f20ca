@@ -19,8 +19,19 @@ def build_parser_prompt(current_state_dict: Dict[str, Any],
     if last_bot_message:
         context = f'Bot asked: "{last_bot_message}"\n'
 
-    prompt = f"""{context}State: {json.dumps(current_state_dict)}
-Extract NEW info only. Return JSON: {{"name","car_reg","car_model","mileage"(int),"warranty"(bool),"issue"}} null if absent."""
+    example = json.dumps({
+        "name": None, "car_reg": None, "car_model": None,
+        "mileage": None, "warranty": None, "issue": None,
+        "user_intent": "data_only",
+        "user_question": None
+    })
+
+    prompt = f"""{context}Current state: {json.dumps(current_state_dict)}
+Extract only NEW information from the user's message. Return valid JSON (null for absent fields):
+{example}
+mileage must be an integer, warranty must be true/false/null.
+user_intent must be one of: data_only, data_and_question, question_only, chitchat.
+user_question: copy the user's question verbatim if they asked one, else null."""
 
     return prompt
 

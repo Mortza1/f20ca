@@ -32,3 +32,6 @@ pretrained_models/
 .claude
 
 recordings
+
+paper_draft.txt
+ARCHITECTURE.md
